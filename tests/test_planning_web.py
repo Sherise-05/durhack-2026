@@ -263,3 +263,28 @@ def test_nap_what_if_chips_simulate_a_nap_at_a_chosen_time(client):
     assert late["possible"] is False  # too close to bedtime
     assert client.post("/api/me/nap-what-if", json={"at": "2026-11-15T14:00:00+00:00"}).status_code == 422
     assert db.list_sleep_records() == before
+
+
+def test_user_can_insist_on_a_short_nap_after_doze_says_no(client, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    _short_night()
+    meeting = CalendarEvent(title="Group meeting", start=datetime(2026, 11, 16, 13, 30),
+                            end=datetime(2026, 11, 16, 15), category=EventCategory.WORK)
+    db.replace_calendar_events([meeting])
+    assert client.post("/api/me/nap-now?start=now").json()["status"] == "blocked"  # 14:00 is during the meeting
+    nap = client.post("/api/me/nap-now?start=now&insist=true").json()
+    assert nap["status"] == "insisted" and nap["sleep_min"] == 10
+    assert nap["lie_down"] == "2026-11-16T14:00:00+00:00" and nap["alarm"] > nap["lie_down"]
+    assert any("Group meeting" in w for w in nap["warnings"])  # the reason stays visible
+    reason = client.post("/api/me/nap-now/reason?start=now&insist=true").json()["reason"]
+    assert "10-minute" in reason
+    monkeypatch.setattr(web, "local_now", lambda: datetime(2026, 11, 16, 21))
+    evening = client.post("/api/me/nap-now?start=now&insist=true").json()
+    assert evening["status"] == "insisted" and any("bedtime" in w.lower() or "evening" in w.lower() for w in evening["warnings"])
+
+
+def test_insisting_does_not_change_a_nap_doze_already_recommends(client):
+    _short_night()
+    normal = client.post("/api/me/nap-now?start=now").json()
+    insisted = client.post("/api/me/nap-now?start=now&insist=true").json()
+    assert insisted["status"] == normal["status"] and insisted["sleep_min"] == normal["sleep_min"]

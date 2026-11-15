@@ -18,7 +18,7 @@ import httpx
 from app.schemas import NapRecommendation, Tiredness, UserData
 from app.services import planner
 from app.services.modes import MODES, effective_mode
-from app.services.nap_recc import _plan, best_nap_slot, recommend_nap
+from app.services.nap_recc import NAP_EFFICIENCY, SELF_REPORT, _plan, best_nap_slot, recommend_nap, time_to_fall_asleep_min
 from app.services.sleep_model import PersonModel
 from app.time_utils import instant
 
@@ -58,6 +58,33 @@ def start_now(data: UserData, now: datetime, model: PersonModel | None = None) -
         return "blocked", plan.model_copy(update={
             "headline": "It's evening, so save your sleepiness for tonight: start winding down a little early instead"})
     return ("now" if plan.should_nap else "anyway"), plan
+
+
+INSIST_NAP_MIN = 10  # our choice: the shortest power nap, so an unadvised nap stays out of deep sleep
+
+
+def insist_now(data: UserData, now: datetime, model: PersonModel | None = None) -> tuple[str, NapRecommendation]:
+    """The user still wants a nap after Doze said no: a 10-minute power nap, with the reason kept as a warning.
+
+    Only refused when they're already asleep in a recorded sleep (a nap can't overlap it).
+    """
+    model = model or PersonModel(data, now)
+    status, plan = start_now(data, now, model=model)
+    if status != "blocked":
+        return status, plan
+    if plan.headline.startswith("You're already asleep"):
+        return "blocked", plan
+    latency = time_to_fall_asleep_min(SELF_REPORT[Tiredness.TIRED], model.personal.latency_min)
+    alarm = now + timedelta(minutes=latency + INSIST_NAP_MIN / NAP_EFFICIENCY)
+    reason = plan.headline.rstrip(".")
+    return "insisted", plan.model_copy(update={
+        "should_nap": False, "kind": "power", "lie_down": now, "alarm": alarm, "sleep_min": INSIST_NAP_MIN,
+        "headline": f"Your choice: a {INSIST_NAP_MIN}-minute power nap, alarm at {alarm:%H:%M}",
+        "reasons": [f"Doze wouldn't normally suggest a nap now: {reason}.",
+                    f"So this is the shortest power nap ({INSIST_NAP_MIN} min), which keeps you out of deep sleep "
+                    "and the grogginess that comes with it.", *plan.reasons],
+        "warnings": [f"Heads up: {reason[:1].lower() + reason[1:]}.", *plan.warnings],
+    })
 
 
 def plan_payload(status: str, plan: NapRecommendation) -> dict:
@@ -104,6 +131,7 @@ def nap_facts(data: UserData, now: datetime, status: str, plan: NapRecommendatio
             "none": "no nap recommended",
             "anyway": "the user chose to nap now; the model predicts only a small benefit, so keep it short",
             "blocked": "a nap doesn't fit right now",
+            "insisted": "Doze advised against a nap now, but the user insisted, so it is a 10-minute power nap; mention the trade-off kindly",
         }[status],
         "lie_down": f"{plan.lie_down:%H:%M}",
         "alarm": f"{plan.alarm:%H:%M}" if plan.alarm else None,
@@ -126,7 +154,10 @@ def nap_facts(data: UserData, now: datetime, status: str, plan: NapRecommendatio
 def fallback_reason(facts: dict, status: str) -> str:
     """Doze's own short explanation from the same facts (no AI)."""
     parts = []
-    if status == "anyway":
+    if status == "insisted":
+        parts.append(facts["doze_reasons"][0] if facts["doze_reasons"] else "Doze wouldn't normally suggest a nap now.")
+        parts.append("Since you need one, it's a 10-minute power nap, short enough to avoid waking from deep sleep.")
+    elif status == "anyway":
         parts.append(f"Doze doesn't predict a big lift right now, but {facts['nap_minutes']} minutes is short "
                      "enough to avoid waking from deep sleep.")
     elif status == "blocked":

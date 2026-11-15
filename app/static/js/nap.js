@@ -11,7 +11,7 @@
         main: $("[data-nap-main]"), icon: $("[data-nap-icon]"), eyebrow: $("[data-nap-eyebrow]"),
         title: $("[data-nap-title]"), sub: $("[data-nap-sub]"), panel: $("[data-nap-panel]"),
         reasonLabel: $("[data-nap-reason-label]"), reason: $("[data-nap-reason]"),
-        warnings: $("[data-nap-warnings]"), cancel: $("[data-nap-cancel]"),
+        warnings: $("[data-nap-warnings]"), cancel: $("[data-nap-cancel]"), insist: $("[data-nap-insist]"),
     };
     const clock = new Intl.DateTimeFormat("en-GB", {timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
     const hhmm = iso => clock.format(new Date(iso));
@@ -102,6 +102,7 @@
         plan = null; chimed = false; save();
         els.panel.hidden = true;
         els.cancel.hidden = false;
+        if (els.insist) els.insist.hidden = true;
         showWarnings([]);
         show("idle", {eyebrow: "Tired right now?", title: "Nap now", sub: "Doze sets the alarm for you"});
     }
@@ -143,10 +144,10 @@
         return response.json();
     }
 
-    async function loadReason(label) {
+    async function loadReason(label, insist = false) {
         showReason("Thinking about your day…", null, label);
         try {
-            const result = await post("/api/me/nap-now/reason?start=now");
+            const result = await post("/api/me/nap-now/reason?start=now" + (insist ? "&insist=true" : ""));
             showReason(result.reason, result.source, label);
             if (plan) { plan.reason = result.reason; plan.source = result.source; save(); }
         } catch (e) {
@@ -174,12 +175,18 @@
             plan = null; save();
             els.panel.hidden = false;
             els.cancel.hidden = true;
+            if (els.insist) els.insist.hidden = false;  // the user can still insist on a short nap
             show("none", {eyebrow: "Not right now", title: "Skip the nap", sub: "Tap to check again later", icon: "☀"});
             loadReason("Why not now");
             return;
         }
+        startNap(result, false);
+    }
+
+    function startNap(result, insisted) {
         els.cancel.hidden = false;
-        // Fetch the spoken wake-up message now; the tap above unlocked audio for later.
+        if (els.insist) els.insist.hidden = true;
+        // Fetch the spoken wake-up message now; the tap unlocked audio for later.
         if (window.DozeWakeVoice) window.DozeWakeVoice.prepare(audio, "nap");
         const demoSeconds = Number(document.body.dataset.demoTimer || 0);
         if (demoSeconds > 0) {  // demo: ring after a few seconds instead of the real nap length
@@ -189,11 +196,31 @@
             result.demo = true;
         }
         begin({...result, pressed_at: Date.now()});
-        loadReason("Why this timing");
+        loadReason(insisted ? "About this nap" : "Why this timing", insisted);
+    }
+
+    // "Nap anyway": the user insists after Doze said a nap doesn't fit.
+    async function insist() {
+        unlockAudio();
+        els.insist.disabled = true;
+        try {
+            const result = await post("/api/me/nap-now?start=now&insist=true");
+            showWarnings(result.warnings);
+            if (result.status === "blocked") {
+                showReason(result.headline + ".", null, "Can't nap right now");
+                return;
+            }
+            startNap(result, true);
+        } catch (e) {
+            showReason("Doze couldn't start the nap. Try again.", null, "Something went wrong");
+        } finally {
+            els.insist.disabled = false;
+        }
     }
 
     els.main.addEventListener("click", press);
     els.cancel.addEventListener("click", reset);
+    if (els.insist) els.insist.addEventListener("click", insist);
 
     // Resume a countdown after a refresh (sound needs one tap again on most browsers).
     const stored = load();

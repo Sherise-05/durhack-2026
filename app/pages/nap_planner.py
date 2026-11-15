@@ -62,28 +62,30 @@ def nap_api(payload: NapRequest):
     return plan.model_dump(mode="json")
 
 
-def _nap_choice(data, now, model, start: str | None):
+def _nap_choice(data, now, model, start: str | None, insist: bool = False):
+    if start == "now" and insist:  # "Nap anyway": the user insists after Doze said no
+        return nap_now.insist_now(data, now, model=model)
     if start == "now":  # "Nap now": start immediately
         return nap_now.start_now(data, now, model=model)
     return nap_now.choose_nap(data, now, model=model)  # best time today
 
 
 @router.post("/api/me/nap-now")
-def nap_now_api(start: str | None = None):
-    """The nap buttons: best time today, or (start=now) a nap starting now."""
+def nap_now_api(start: str | None = None, insist: bool = False):
+    """The nap buttons: best time today, (start=now) a nap starting now, or (insist) a nap anyway."""
     data = db.load_user_data()
     now = web.local_now()
-    status, plan = _nap_choice(data, now, PersonModel(data, now), start)
+    status, plan = _nap_choice(data, now, PersonModel(data, now), start, insist)
     return nap_now.plan_payload(status, plan)
 
 
 @router.post("/api/me/nap-now/reason")
-def nap_reason_api(start: str | None = None):
+def nap_reason_api(start: str | None = None, insist: bool = False):
     """A short explanation of the same choice (Gemini, or Doze's own words)."""
     data = db.load_user_data()
     now = web.local_now()
     model = PersonModel(data, now)
-    status, plan = _nap_choice(data, now, model, start)
+    status, plan = _nap_choice(data, now, model, start, insist)
     return nap_now.explain(data, now, status, plan, model=model)
 
 
