@@ -22,8 +22,9 @@ But the tools don't help much:
 
 ### 🌙 Today: one screen for your day
 - **Tonight:** your wind-down and sleep time, worked back from tomorrow's first commitment, your sleep need and your recent nights.
-- **Sleep now:** a countdown to your wake-up time. When it ends, the alarm rings and opens a short [Zooniverse](https://www.zooniverse.org/) citizen-science task, so you wake up helping researchers.
+- **Sleep now:** a countdown to your wake-up time. When it ends, a friendly voice wakes you up, then the alarm rings and opens a short [Zooniverse](https://www.zooniverse.org/) citizen-science task, so you wake up helping researchers.
 - **Nap:** the best nap time today, picked around your events, plus **Nap now**, which sets the alarm for you and explains why it chose that timing.
+- **🔊 Spoken wake-ups:** when either countdown ends, Doze reads a wake-up message aloud, picked at random from a list and spoken in a randomly chosen [ElevenLabs](https://elevenlabs.io/) voice: *"Rise and shine, Maya! Your rest is done. Drink some water before you check your phone."* Naps get their own shorter messages.
 - **What if…?:** tap *"stay up till 2 a.m."* or *"nap at 3 p.m."* to see the trade-off instantly. You get the change in sleep and your predicted alertness at each of tomorrow's events, side by side with Doze's plan.
 - **Personal tips** for reaching your sleep goal, and a **one-tap morning check-in** that teaches Doze about you.
 
@@ -57,7 +58,7 @@ Doze's recommendations come from a **real sleep model in Python**, not from a la
 - **The nap algorithm** simulates your day with and without each candidate nap: 10 or 20 min, or 90 min only if you're very tired in the early afternoon, and never 30–60 min. It weights alertness during your events (exams count most), subtracts the cost to tonight's sleep, and leaves a 20-minute grogginess buffer before exams and driving.
 - **Bedtime planning** works backwards from your first commitment tomorrow, your morning routine and your learned sleep need. It never plans below 7 hours (8 for teenagers) without saying so.
 
-**Where AI fits in.** Gemini reads your onboarding conversation, explains nap timings in plain words, writes personal tips, and titles and illustrates journal entries. It only rewords facts the maths produced, and every AI feature has a non-AI fallback. Gemini never decides when you sleep.
+**Where AI fits in.** Gemini reads your onboarding conversation, explains nap timings in plain words, writes personal tips, and titles and illustrates journal entries. ElevenLabs gives the alarm its voice. Both only present what the maths decided, and every AI feature has a non-AI fallback (if ElevenLabs is unavailable, the browser's built-in voice reads the same message). Neither ever decides when you sleep.
 
 Every rule is documented in the code against our **Sleep Science Brief**, and the [science guide](docs/SCIENCE_AND_FEATURES.md) explains each feature, its sources and its limits.
 
@@ -79,25 +80,28 @@ Open **http://127.0.0.1:8000**, create an account and finish the short setup.
 
 **Demo tips**
 - At the bottom of **Today**, **Try a mode with sample data** signs you in to a demo student (Normal, Exam, Holiday or Travel) with two weeks of sleep and a calendar already filled in. Your own account isn't changed; log out to return to it.
-- After pressing **Sleep now**, use **Demo: wake in 10 s** to hear the alarm without waiting all night. Allow pop-ups so the wake-up task can open.
+- **Demo timer:** by default, **Sleep now** and **Nap now** ring after **10 seconds** instead of hours, so you can hear the spoken wake-up and the alarm straight away. Set `DEMO_TIMER_SECONDS=0` in `.env` for real timings.
+- Allow pop-ups so the Zooniverse wake-up task can open, and turn the sound up.
 - On **Calendar**, **Connect Google Calendar** loads a sample week (lectures, gym, a driving lesson and two exams), which switches Exam mode on.
 
 ### Configuration
 
-Everything runs without any keys; AI features then fall back to Doze's own wording.
+Everything runs without any keys; AI features then fall back to Doze's own wording, and the alarm uses the browser's built-in voice.
 
 | Variable | Needed for |
 |---|---|
 | `GEMINI_API_KEY` | AI onboarding, nap explanations, tips and dream titles |
 | `GEMINI_MODEL` | Which Gemini model to use (e.g. `gemini-flash-lite-latest`); onboarding needs it set |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Connecting a real Google Calendar (OAuth flow at `/auth/google`) |
+| `ELEVENLABS_API_KEY` | Spoken wake-up messages (needs Text to Speech; add Voices: Read so Doze can pick from all your pre-made voices) |
+| `DEMO_TIMER_SECONDS` | Demo shortcut: alarms ring after this many seconds (default `10`); `0` for real timers |
 | `SESSION_SECRET` | Optional; a random one is generated in `instance/` if blank |
 
 Keep real keys only in your `.env`, which is ignored by git.
 
 ## Tech stack
 
-**Python · FastAPI · Pydantic · Jinja2 · SQLite · vanilla JavaScript · Gemini API · Google Calendar API · Web Speech API · Web Audio API**
+**Python · FastAPI · Pydantic · Jinja2 · SQLite · vanilla JavaScript · Gemini API · ElevenLabs text to speech · Google Calendar API · Web Speech API · Web Audio API**
 
 No front-end framework: pages are server-rendered, with small vanilla-JavaScript modules for the countdowns, voice input and instant What-if results. Charts are drawn on a plain canvas, each with an accessible table of values.
 
@@ -133,6 +137,7 @@ Run the tests with `pytest`. Developer and integration notes are in [docs/DEVELO
 ## Credits
 
 - Wake-up task: [Squirrel Mapper](https://www.zooniverse.org/projects/bcosentino/squirrelmapper) on Zooniverse.
+- Wake-up voices: [ElevenLabs](https://elevenlabs.io/) text to speech.
 - Research: the studies linked above, plus [Gardiner et al. 2023](https://doi.org/10.1016/j.smrv.2023.101764) and [Van Dongen et al. 2011](https://pmc.ncbi.nlm.nih.gov/articles/PMC3260461/). Full references are in the [science guide](docs/SCIENCE_AND_FEATURES.md).
 
 ## Team
