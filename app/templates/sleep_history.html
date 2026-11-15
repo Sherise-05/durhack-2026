@@ -2,14 +2,84 @@
 {% block title %}My sleep | Doze{% endblock %}
 {% block content %}
 <section class="welcome page-heading">
-    <div><p class="eyebrow">MY SLEEP</p><h1>How you've been sleeping</h1><p>Every night you log, and how refreshed you felt, teaches Doze a little more about you.</p></div>
-    <a class="button secondary" href="/profile">Your usual routine</a>
+    <div><p class="eyebrow">MY SLEEP</p><h1>How you've been sleeping</h1><p>Your last two weeks of sleep, and what Doze has noticed.</p></div>
+    <a class="button secondary" href="/dashboard#check-in">Log last night on Today</a>
 </section>
 {% if error %}<div class="notice warning" role="alert"><strong>We couldn’t save that sleep yet.</strong><p>{{ error }}</p></div>{% endif %}
 
-<section id="log-sleep" class="card blue-card" aria-labelledby="log-title">
-    <p class="eyebrow">{{ 'UPDATE A NIGHT' if editing.source_id else 'ADD A NIGHT OR NAP' }}</p>
-    <h2 id="log-title">{{ 'Edit this sleep' if editing.source_id else 'Log a sleep' }}</h2>
+<section class="stats-grid insight-stats" aria-label="Your sleep at a glance">
+    <article class="card">
+        <span class="card-label">Average sleep · last 7 days</span>
+        {% if insights.recent_avg_h is not none %}
+        <p class="metric-value">{{ insights.recent_avg_h|duration_h }}</p>
+        <p class="muted">{% if insights.recent_vs_need_h >= 0 %}{{ insights.recent_vs_need_h|duration_h }} over{% else %}{{ (-insights.recent_vs_need_h)|duration_h }} under{% endif %} your {{ personal.need.mean|duration_h }} need</p>
+        {% else %}<p class="metric-value">—</p><p class="muted">No nights logged this week</p>{% endif %}
+    </article>
+    <article class="card">
+        <span class="card-label">Sleep debt</span>
+        <p class="metric-value">{{ debt_h|duration_h }}</p>
+        <p class="muted">{% if debt_h >= 1 %}Doze is winning it back gradually{% else %}You're close to even{% endif %}</p>
+    </article>
+    <article class="card">
+        <span class="card-label">Rhythm</span>
+        <p class="metric-value">{{ insights.regularity or '—' }}</p>
+        <p class="muted">{% if insights.wake_sd_min is not none %}Wake time varies ± {{ insights.wake_sd_min|round|int }} min{% else %}Needs 3 nights{% endif %}</p>
+    </article>
+    <article class="card blue-card">
+        <span class="card-label">Your sleep need</span>
+        <p class="metric-value">{{ personal.need.mean|duration_h }}</p>
+        <p class="muted">{% if personal.need.n %}Learned from {{ personal.need.n }} check-in{{ 's' if personal.need.n != 1 else '' }} · likely {{ personal.need.low }}–{{ personal.need.high }} h{% else %}Starting estimate · rate your mornings to personalise it{% endif %}</p>
+    </article>
+</section>
+
+<div class="dashboard-grid section-gap">
+    <article class="card chart-section">
+        <div class="card-heading"><h2>Hours asleep</h2><span class="muted">Last 14 days</span></div>
+        {% if insights.nights_logged %}
+        <canvas class="alertness-chart" data-chart="history-hours" data-chart-kind="bar" aria-label="Estimated hours asleep for the last 14 days; the dashed line is your sleep need; missing days are not zero" role="img"></canvas>
+        <script type="application/json" id="history-hours">{{ insights.hours_chart|tojson }}</script>
+        <p class="muted">Dashed line: your current sleep need. Gaps are nights you didn't log.</p>
+        {% else %}<div class="empty-state"><p>No nights logged yet. Do the morning check-in on <a href="/dashboard">Today</a>.</p></div>{% endif %}
+    </article>
+    <article class="card chart-section">
+        <div class="card-heading"><h2>When you slept</h2><span class="muted">Bedtime → wake-up</span></div>
+        {% if insights.nights_logged %}
+        <canvas class="alertness-chart" data-chart="history-window" data-chart-kind="window" aria-label="Each night from falling asleep to waking up, for the last 14 days" role="img"></canvas>
+        <script type="application/json" id="history-window">{{ insights.window_chart|tojson }}</script>
+        <p class="muted">Bars that line up mean a steady body clock.</p>
+        {% else %}<div class="empty-state"><p>Your sleep times will appear here.</p></div>{% endif %}
+    </article>
+</div>
+
+<section class="card section-gap" aria-labelledby="noticed-title">
+    <p class="eyebrow">INSIGHTS</p>
+    <h2 id="noticed-title">What Doze noticed</h2>
+    <ul class="insight-list">
+        {% for item in insights.insights %}
+        <li class="insight insight-{{ item.tone }}"><strong>{{ item.title }}</strong><span>{{ item.body }}</span></li>
+        {% endfor %}
+    </ul>
+</section>
+
+
+
+<section id="saved-sleep" class="section-gap" aria-labelledby="saved-title">
+    <div class="section-heading"><h2 id="saved-title">Your nights</h2><p class="muted">{{ records|length }} logged</p></div>
+    {% if records %}
+    <div class="record-list">
+        {% for record in records[:7] %}{% include '_sleep_record.html' %}{% endfor %}
+    </div>
+    {% if records|length > 7 %}
+    <details class="section-gap"><summary>Show {{ records|length - 7 }} older records</summary><div class="record-list">{% for record in records[7:] %}{% include '_sleep_record.html' %}{% endfor %}</div></details>
+    {% endif %}
+    {% else %}
+    <div class="card empty-state"><h3>Your sleep story starts here</h3><p class="muted">No nights logged yet. Until then, recommendations use your profile and starting estimates.</p><a class="text-link" href="/dashboard#check-in">Log last night on Today →</a></div>
+    {% endif %}
+</section>
+
+{% if editing.source_id or error %}
+<details id="log-sleep" class="card blue-card section-gap log-sleep" open>
+    <summary>Edit this night</summary>
     <p class="muted">Tell us when you went to bed and woke up. Times are shown in Europe/London.</p>
     <form method="post" action="/sleep-history" class="planner-form">
         <input type="hidden" name="source_id" value="{{ editing.source_id or '' }}">
@@ -48,21 +118,8 @@
         </details>
         <div class="action-row"><button type="submit" class="button">{{ 'Save changes' if editing.source_id else 'Save sleep' }}</button>{% if editing.source_id %}<a class="button secondary" href="/sleep-history#saved-sleep">Cancel edit</a>{% endif %}</div>
     </form>
-</section>
-
-<section id="saved-sleep" class="section-gap" aria-labelledby="saved-title">
-    <div class="section-heading"><h2 id="saved-title">Your nights</h2><p class="muted">{{ records|length }} logged</p></div>
-    {% if records %}
-    <div class="record-list">
-        {% for record in records[:7] %}{% include '_sleep_record.html' %}{% endfor %}
-    </div>
-    {% if records|length > 7 %}
-    <details class="section-gap"><summary>Show {{ records|length - 7 }} older records</summary><div class="record-list">{% for record in records[7:] %}{% include '_sleep_record.html' %}{% endfor %}</div></details>
-    {% endif %}
-    {% else %}
-    <div class="card empty-state"><h3>Your sleep story starts here</h3><p class="muted">No completed sleep recorded yet. Until you add history, recommendations use your profile and starting estimates.</p><a class="text-link" href="#log-sleep">Log your first night ↑</a></div>
-    {% endif %}
-</section>
+</details>
+{% endif %}
 
 <details class="card section-gap advanced-options">
     <summary>What Doze has learned about you</summary>

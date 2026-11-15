@@ -110,6 +110,18 @@ small { font-size: .8rem; line-height: 1.5; color: var(--muted); font-weight: 40
 .timeline dt, .timeline dd { margin: 0; }
 .card-sub { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .card-sub p { margin: 4px 0 0; }
+/* My sleep: stats, insights, collapsible log form */
+.insight-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .insight-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .insight-stats { grid-template-columns: 1fr; } }
+.insight-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
+.insight { display: grid; gap: 4px; padding: 14px 16px 14px 18px; border-radius: 14px; background: var(--blue-light); border-left: 4px solid var(--brand-blue); }
+.insight strong { color: var(--text); }
+.insight span { color: var(--muted); }
+.insight-good { background: #eaf5ed; border-left-color: #4f9a68; }
+.insight-warn { background: var(--warning-bg); border-left-color: #d9a441; }
+.log-sleep > summary { cursor: pointer; font-size: 1.15rem; font-weight: 700; color: var(--text); }
+.log-sleep[open] > summary { margin-bottom: 12px; }
 /* Morning check-in on Today */
 .checkin-card { margin-bottom: 22px; background: linear-gradient(135deg, var(--primary-light), var(--blue-light)); }
 .checkin-question { margin: 16px 0 10px; font-weight: 650; }

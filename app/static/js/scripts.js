@@ -216,11 +216,53 @@
         makeTable(canvas, ["Wake-up date", "Estimated time asleep (hours)"], points.map(point => [point.label, point.value === null ? "Not recorded" : String(point.value)]));
         installReadout(canvas, points.length, index => `${points[index].label} · ${points[index].value === null ? "Not recorded" : `${points[index].value} hours estimated asleep`}`, x);
     }
+    function drawWindow(canvas, data) {
+        // Each night as a bar from bedtime to wake-up. Values are minutes after noon.
+        const points = data.points || [];
+        const known = points.filter(point => Number.isFinite(point.start) && Number.isFinite(point.end));
+        if (!known.length) return;
+        const lo = Math.floor((Math.min(...known.map(p => p.start)) - 30) / 60) * 60;
+        const hi = Math.ceil((Math.max(...known.map(p => p.end)) + 30) / 60) * 60;
+        const width = Math.max(120, canvas.clientWidth), height = 280, scale = window.devicePixelRatio || 1;
+        canvas.width = width * scale; canvas.height = height * scale;
+        const ctx = canvas.getContext("2d"); if (!ctx) return;
+        ctx.scale(scale, scale);
+        const left = 46, right = width - 12, top = 14, bottom = height - 40;
+        const y = minutes => top + (minutes - lo) / Math.max(hi - lo, 1) * (bottom - top);
+        const label = minutes => { const total = ((Math.round(minutes) + 720) % 1440 + 1440) % 1440; return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`; };
+        ctx.font = "12px system-ui, sans-serif"; ctx.lineWidth = 1;
+        const stepH = (hi - lo) > 720 ? 180 : 120;
+        for (let m = lo; m <= hi; m += stepH) {
+            ctx.strokeStyle = "#dce5ed"; ctx.beginPath(); ctx.moveTo(left, y(m)); ctx.lineTo(right, y(m)); ctx.stroke();
+            ctx.fillStyle = "#526279"; ctx.textAlign = "left"; ctx.fillText(label(m), 4, y(m) + 4);
+        }
+        const step = (right - left) / points.length, barWidth = Math.min(step * .56, 26);
+        const x = index => left + step * (index + .5);
+        points.forEach((point, index) => {
+            if (!Number.isFinite(point.start) || !Number.isFinite(point.end)) return;
+            const top_ = y(point.start), h = Math.max(2, y(point.end) - top_);
+            const gradient = ctx.createLinearGradient(0, top_, 0, top_ + h);
+            gradient.addColorStop(0, "#54365f"); gradient.addColorStop(1, "#c9a3d8");
+            ctx.fillStyle = gradient;
+            const r = Math.min(barWidth / 2, 8), bx = x(index) - barWidth / 2;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(bx, top_, barWidth, h, r); else ctx.rect(bx, top_, barWidth, h);
+            ctx.fill();
+        });
+        ctx.textAlign = "center"; ctx.fillStyle = "#526279"; ctx.font = "11px system-ui, sans-serif";
+        const every = width < 420 ? 3 : width < 640 ? 2 : 1;
+        points.forEach((point, index) => { if (index % every === 0 || index === points.length - 1) ctx.fillText(point.label, x(index), bottom + 22); });
+        const text = point => Number.isFinite(point.start) ? `${label(point.start)} → ${label(point.end)}` : "Not recorded";
+        makeTable(canvas, ["Night (wake-up day)", "Asleep → awake"], points.map(point => [point.label, text(point)]));
+        installReadout(canvas, points.length, index => `${points[index].label} · ${text(points[index])}`, x);
+    }
     function drawCharts() {
         document.querySelectorAll("canvas[data-chart]").forEach(canvas => {
             const source = document.getElementById(canvas.dataset.chart); if (!source) return;
             let data; try { data = JSON.parse(source.textContent); } catch (_) { return; }
-            if (canvas.dataset.chartKind === "bar") drawBar(canvas, data); else drawLine(canvas, data);
+            if (canvas.dataset.chartKind === "bar") drawBar(canvas, data);
+            else if (canvas.dataset.chartKind === "window") drawWindow(canvas, data);
+            else drawLine(canvas, data);
         });
     }
     drawCharts();

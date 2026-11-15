@@ -7,7 +7,7 @@
     <title>{% block title %}Doze{% endblock %}</title>
 
     <link rel="stylesheet"
-          href="{{ url_for('static', path='/css/scripts.css') }}?v=8">
+          href="{{ url_for('static', path='/css/scripts.css') }}?v=9">
     {% block extra_head %}{% endblock %}
 </head>
 <body{% if not profile_complete %} class="public-view"{% endif %}>
@@ -60,7 +60,7 @@
     </main>
 
     <footer class="site-footer">Sleep smarter. <span>{% if profile_complete %}Times shown in Europe/London · Model estimates, not clinical measurements.{% else %}Your sleep. Your rhythm.{% endif %}</span></footer>
-    <script src="{{ url_for('static', path='/js/scripts.js') }}?v=3" defer></script>
+    <script src="{{ url_for('static', path='/js/scripts.js') }}?v=4" defer></script>
     <script src="{{ url_for('static', path='/js/nap.js') }}?v=1" defer></script>
     {% block extra_scripts %}{% endblock %}
 </body>

@@ -53,6 +53,8 @@ def duration_h(value) -> str:
     if value is None:
         return "—"
     minutes = round(float(value) * 60)
+    if minutes < 60:
+        return f"{minutes} min"
     return f"{minutes // 60}h {minutes % 60:02d}m"
 
 

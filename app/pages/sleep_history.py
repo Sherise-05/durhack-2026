@@ -11,9 +11,9 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app import web
 from app.schemas import SleepSession, UserProfile
-from app.services import db, learning
+from app.services import db, learning, sleep_insights
 from app.services.modes import MODES, effective_mode
-from app.services.sleep_model import nightly_stats
+from app.services.sleep_model import nightly_stats, sleep_debt_h
 
 router = APIRouter()
 
@@ -27,10 +27,14 @@ def _history_context(*, error: str | None = None, editing: dict | None = None) -
     data = db.load_user_data()
     now = web.local_now()
     personal = learning.personalise(data, now)
+    nightly = nightly_stats(data.sessions, personal.need_h, now)
+    debt = sleep_debt_h(data.sessions, personal.need_h, now)
     return {
         "records": db.list_sleep_records(),
         "legacy_records": db.fetch_sleep_history(),
-        "nightly": nightly_stats(data.sessions, personal.need_h, now),
+        "nightly": nightly,
+        "insights": sleep_insights.build(nightly, personal.need_h, debt, now.date()),
+        "debt_h": debt,
         "personal": personal,
         "profile": data.profile,
         "editing": editing or {},
