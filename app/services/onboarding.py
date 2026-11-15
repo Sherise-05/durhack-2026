@@ -22,7 +22,8 @@ from app.services import db
 
 MAX_MESSAGE_LENGTH = 2000
 MAX_USER_TURNS = 30
-REQUIRED_FIELDS = ("name", "age_band", "usual_bedtime", "usual_wake", "morning_routine_min")
+REQUIRED_FIELDS = ("name", "age_band", "usual_bedtime",
+                   "usual_wake", "morning_routine_min")
 FIELD_LABELS = {
     "name": "your name", "age_band": "your age band",
     "usual_bedtime": "your usual bedtime", "usual_wake": "your usual wake-up time",
@@ -120,10 +121,12 @@ def request_gemini(messages: list[dict], draft: dict) -> dict:
     """Provider boundary: easy to replace in tests; never returns provider secrets."""
     key = os.getenv("GEMINI_API_KEY", "").strip()
     if not key:
-        raise ProviderError("Doze’s conversation is not configured yet. You can still enter and review your profile manually.")
-    model = (os.getenv("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite").removeprefix("models/")
+        raise ProviderError(
+            "Doze’s conversation is not configured yet. You can still enter and review your profile manually.")
+    model = os.getenv("GEMINI_MODEL", "").strip()
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", model):
-        raise ProviderError("Doze’s conversation settings need attention. You can enter your profile manually.")
+        raise ProviderError(
+            "Doze’s conversation settings need attention. You can enter your profile manually.")
     system = (
         "You are Doze's friendly, concise onboarding assistant. Collect a starting sleep profile, "
         "not medical history or a diagnosis. Never ask for passwords, API keys or payment details. "
@@ -152,7 +155,8 @@ def request_gemini(messages: list[dict], draft: dict) -> dict:
         if contents and contents[-1]["role"] == role:
             contents[-1]["parts"].append({"text": message["content"]})
         else:
-            contents.append({"role": role, "parts": [{"text": message["content"]}]})
+            contents.append(
+                {"role": role, "parts": [{"text": message["content"]}]})
     payload = {
         "systemInstruction": {"parts": [{"text": system}]}, "contents": contents,
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2500,
@@ -163,25 +167,33 @@ def request_gemini(messages: list[dict], draft: dict) -> dict:
         # budget competing with the bounded JSON output.
         payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
     elif model.startswith("gemini-3.8-"):
-        payload["generationConfig"]["thinkingConfig"] = {"thinkingLevel": "low"}
+        payload["generationConfig"]["thinkingConfig"] = {
+            "thinkingLevel": "low"}
     try:
-        with httpx.Client(timeout=httpx.Timeout(30, connect=5)) as client:
+        with httpx.Client(timeout=httpx.Timeout(120, connect=30)) as client:
             response = client.post(
                 f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                 headers={"x-goog-api-key": key}, json=payload,
             )
         if response.status_code == 429:
-            raise ProviderError("Doze’s conversation is busy just now. Retry shortly, or enter your details in the profile review.")
+            raise ProviderError(
+                "Doze’s conversation is busy just now. Retry shortly, or enter your details in the profile review.")
         if response.status_code == 404:
-            raise ProviderError("Doze’s conversation model is unavailable. Ask the app owner to update GEMINI_MODEL, or enter your profile manually.")
+            raise ProviderError(
+                "Doze’s conversation model is unavailable. Ask the app owner to update GEMINI_MODEL, or enter your profile manually.")
         response.raise_for_status()
         data = response.json()
         parts = data["candidates"][0]["content"]["parts"]
-        text = "".join(part.get("text", "") for part in parts if not part.get("thought"))
+        text = "".join(part.get("text", "")
+                       for part in parts if not part.get("thought"))
         return json.loads(text)
     except ProviderError:
         raise
-    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+        print("GEMINI ERROR:", type(exc).__name__, str(exc))
+        if isinstance(exc, httpx.HTTPStatusError):
+            print("GEMINI STATUS:", exc.response.status_code)
+            print("GEMINI RESPONSE:", exc.response.text[:1500])
         raise ProviderError() from None
 
 
@@ -223,25 +235,33 @@ def converse(account: dict, message: str) -> dict:
     if not message or len(message) > MAX_MESSAGE_LENGTH:
         raise OnboardingError("Write a message of 1–2,000 characters.")
     if account.get("onboarding_complete"):
-        raise OnboardingError("Your profile is already set up.", status_code=409)
+        raise OnboardingError(
+            "Your profile is already set up.", status_code=409)
     user_id = account["id"]
     with _account_lock(user_id):
         state = ensure_state(account)
         messages = [dict(item) for item in state["messages"]]
-        retry = bool(state.get("pending") and messages and messages[-1]["role"] == "user" and messages[-1]["content"] == message)
+        retry = bool(state.get(
+            "pending") and messages and messages[-1]["role"] == "user" and messages[-1]["content"] == message)
         if not retry:
             if sum(item["role"] == "user" for item in messages) >= MAX_USER_TURNS:
-                raise OnboardingError("You can finish entering your details in the profile review now.", status_code=429)
+                raise OnboardingError(
+                    "You can finish entering your details in the profile review now.", status_code=429)
             messages.append({"role": "user", "content": message})
         state = {**state, "messages": messages, "pending": True, "error": None}
         try:
-            state = db.save_onboarding(user_id, state, expected_revision=state.get("_revision", 0))
+            state = db.save_onboarding(
+                user_id, state, expected_revision=state.get("_revision", 0))
         except ValueError:
-            raise OnboardingError("Your conversation changed in another tab. Refresh and continue from the latest answer.", status_code=409) from None
+            raise OnboardingError(
+                "Your conversation changed in another tab. Refresh and continue from the latest answer.", status_code=409) from None
         try:
-            proposed = GeminiReply.model_validate(request_gemini(messages, state["draft"]))
-            patch = proposed.profile_patch.model_dump(mode="json", exclude_none=True)
-            user_messages = [item["content"] for item in messages if item["role"] == "user"]
+            proposed = GeminiReply.model_validate(
+                request_gemini(messages, state["draft"]))
+            patch = proposed.profile_patch.model_dump(
+                mode="json", exclude_none=True)
+            user_messages = [item["content"]
+                             for item in messages if item["role"] == "user"]
             if set(proposed.evidence) - set(PATCH_FIELDS):
                 raise ProviderError(status_code=502)
             for field, value in patch.items():
@@ -250,9 +270,11 @@ def converse(account: dict, message: str) -> dict:
                 evidence = proposed.evidence.get(field, "").strip()
                 # Historical answers can fill a fact missed earlier, but may
                 # not reverse an existing value after the user corrected it.
-                supporting_answers = [message] if field in state["draft"] else user_messages
+                supporting_answers = [
+                    message] if field in state["draft"] else user_messages
                 if not evidence or len(evidence) > MAX_MESSAGE_LENGTH or not any(evidence in answer for answer in supporting_answers):
-                    raise ProviderError("Doze could not reliably match that answer to your profile. Please clarify it or enter the detail in review.", status_code=502)
+                    raise ProviderError(
+                        "Doze could not reliably match that answer to your profile. Please clarify it or enter the detail in review.", status_code=502)
             draft = {**state["draft"], **patch}
             # Validate combined values without filling unknown fields in the draft.
             ProfilePatch.model_validate(draft)
@@ -260,20 +282,35 @@ def converse(account: dict, message: str) -> dict:
             reply = proposed.reply.strip()
             if not missing:
                 reply = "Thanks — your starting profile is ready to review. Check and edit the details before saving it."
-            elif re.search(r"\b(all set|profile is (?:complete|ready|saved)|setup is complete|everything (?:is|looks) ready|saved (?:your |the )?(?:profile|routine)|profile has been saved)\b", reply, re.I):
-                reply = "Before we can review your starting profile, could you tell me " + FIELD_LABELS[missing[0]] + "?"
-            state = {**state, "draft": draft, "messages": [*messages, {"role": "assistant", "content": reply}], "pending": False, "error": None}
-            state = db.save_onboarding(user_id, state, expected_revision=state["_revision"])
+
+            elif re.search(
+                r"\b(all set|profile is (?:complete|ready|saved)|setup is complete|everything (?:is|looks) ready|saved (?:your |the )?(?:profile|routine)|profile has been saved)\b",
+                reply,
+                re.I
+            ):
+                reply = (
+                    "Before we can review your starting profile, could you tell me "
+                    + FIELD_LABELS[missing[0]]
+                    + "?"
+                )
+            state = {**state, "draft": draft, "messages": [*messages, {
+                "role": "assistant", "content": reply}], "pending": False, "error": None}
+            state = db.save_onboarding(
+                user_id, state, expected_revision=state["_revision"])
             return {**public_state(state), "reply": reply}
         except (ProviderError, ValidationError) as exc:
-            error = exc if isinstance(exc, ProviderError) else ProviderError("Doze could not reliably read that answer. Please clarify it or enter your details in review.", status_code=502)
+            error = exc if isinstance(exc, ProviderError) else ProviderError(
+                "Doze could not reliably read that answer. Please clarify it or enter your details in review.", status_code=502)
             try:
-                db.save_onboarding(user_id, {**state, "error": str(error)}, expected_revision=state["_revision"])
+                db.save_onboarding(
+                    user_id, {**state, "error": str(error)}, expected_revision=state["_revision"])
             except ValueError:
-                raise OnboardingError("Your conversation changed in another tab. Refresh and continue from the latest answer.", status_code=409) from None
+                raise OnboardingError(
+                    "Your conversation changed in another tab. Refresh and continue from the latest answer.", status_code=409) from None
             raise error from None
         except ValueError:
-            raise OnboardingError("Your conversation changed in another tab. Refresh and continue from the latest answer.", status_code=409) from None
+            raise OnboardingError(
+                "Your conversation changed in another tab. Refresh and continue from the latest answer.", status_code=409) from None
 
 
 def review_state(account: dict) -> dict:
@@ -285,7 +322,8 @@ def review_state(account: dict) -> dict:
     if "chronotype" not in draft:
         defaults.append("Body clock: Not sure (starting setting)")
     values = {key: draft.get(key, "") for key in PATCH_FIELDS}
-    values.update(sleep_latency_min=draft.get("sleep_latency_min", 15), chronotype=draft.get("chronotype", "neutral"))
+    values.update(sleep_latency_min=draft.get("sleep_latency_min",
+                  15), chronotype=draft.get("chronotype", "neutral"))
     return {
         "values": values, "error": None, "defaults": defaults,
         "required_fields": list(REQUIRED_FIELDS),
@@ -296,21 +334,25 @@ def review_state(account: dict) -> dict:
 
 def confirm_profile(account: dict, values: dict, *, revision: int | None = None) -> UserProfile:
     if account.get("onboarding_complete"):
-        raise OnboardingError("Your profile is already set up.", status_code=409)
+        raise OnboardingError(
+            "Your profile is already set up.", status_code=409)
     with _account_lock(account["id"]):
         try:
             patch = ProfilePatch.model_validate(values)
             cleaned = patch.model_dump(mode="json", exclude_none=True)
             missing = _missing(cleaned)
             if missing:
-                raise OnboardingError("Please confirm " + ", ".join(FIELD_LABELS[key] for key in missing) + ".")
+                raise OnboardingError(
+                    "Please confirm " + ", ".join(FIELD_LABELS[key] for key in missing) + ".")
             goal = cleaned.pop("goal", None)
             profile = UserProfile.model_validate(cleaned)
         except ValidationError as exc:
-            messages = [f"{'.'.join(map(str, error['loc']))}: {error['msg']}" for error in exc.errors(include_context=False, include_url=False)]
+            messages = [f"{'.'.join(map(str, error['loc']))}: {error['msg']}" for error in exc.errors(
+                include_context=False, include_url=False)]
             raise OnboardingError("; ".join(messages)) from None
         try:
-            db.complete_onboarding(account["id"], profile, goal, expected_revision=revision)
+            db.complete_onboarding(
+                account["id"], profile, goal, expected_revision=revision)
         except ValueError as exc:
             raise OnboardingError(str(exc), status_code=409) from None
         return profile
