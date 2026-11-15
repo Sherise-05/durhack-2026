@@ -214,7 +214,6 @@ small { font-size: .8rem; line-height: 1.5; color: var(--muted); font-weight: 40
 .demo-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* Brain dump */
-.brain-dump-link { display: inline-block; margin-top: 12px; }
 .dump-card { border-left: 5px solid var(--purple-500); }
 .dump-summary { font-style: italic; color: var(--muted); }
 .dump-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 22px; margin-top: 8px; }
