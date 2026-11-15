@@ -151,6 +151,7 @@ def init_db():
                 PRIMARY KEY (user_id, reference)
             );
         """)
+        _ensure_dream_columns(conn)
     if path == DEFAULT_DB_PATH:
         path.chmod(0o600)
 
@@ -561,16 +562,39 @@ def create_dream_table():
         """)
 
 
-def save_dream(user_id, title, content):
+def _ensure_dream_columns(conn):
+    """Older databases created ``dreams`` without these columns; add them in place."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(dreams)")}
+    for column in ("image_path", "details"):
+        if column not in existing:
+            conn.execute(f"ALTER TABLE dreams ADD COLUMN {column} TEXT")
+
+
+def save_dream(user_id, title, content, details: dict | None = None):
     with get_connection() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO dreams (user_id, title, content)
-            VALUES (?, ?, ?)
+            INSERT INTO dreams (user_id, title, content, details)
+            VALUES (?, ?, ?, ?)
             """,
-            (user_id, title, content)
+            (user_id, title, content, json.dumps(details) if details is not None else None)
         )
         return cursor.lastrowid
+
+
+def delete_dream(user_id, dream_id) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM dreams WHERE id = ? AND user_id = ?", (dream_id, user_id))
+        return cursor.rowcount > 0
+
+
+def _dream_row(row) -> dict:
+    dream = dict(row)
+    try:
+        dream["details"] = json.loads(dream.get("details") or "null")
+    except ValueError:
+        dream["details"] = None
+    return dream
 
 
 def get_dreams(user_id):
@@ -585,7 +609,7 @@ def get_dreams(user_id):
             (user_id,)
         ).fetchall()
 
-    return [dict(row) for row in rows]
+    return [_dream_row(row) for row in rows]
 
 
 def get_dream(user_id, dream_id):
@@ -595,7 +619,7 @@ def get_dream(user_id, dream_id):
             "SELECT * FROM dreams WHERE id = ? AND user_id = ?",
             (dream_id, user_id)
         ).fetchone()
-    return dict(row) if row else None
+    return _dream_row(row) if row else None
 
 
 def save_dream_image(user_id, dream_id, image_path):
