@@ -74,12 +74,12 @@ def test_nap_button_calls_brain_with_validated_inputs(client):
     response = client.post("/nap-planner", data={"tiredness": "very_tired"})
     assert response.status_code == 200
     if plan["should_nap"]:
-        assert "Suggested alarm" in response.text
+        assert "Tap for a nap" in response.text and 'id="nap-result"' in response.text
         assert f"{plan['sleep_min']} min" in response.text
         assert web.clock_ceil(datetime.fromisoformat(plan["alarm"])) in response.text
     else:
-        assert "No nap is recommended" in response.text
-    assert "has not started an alarm" in response.text
+        assert "Skip the nap for now." in response.text and plan["headline"] in response.text
+    assert "doesn't record a sleep or set an alarm" in response.text
     assert client.get("/nap-planner").status_code == 200
 
 
@@ -141,3 +141,47 @@ def test_what_if_form_preserves_second_occurrence_of_repeated_clock(client, monk
     api = client.post("/api/me/what-if", json=payload).json()
     assert api["bedtime"] == payload["bedtime"]
     assert api["sleep_h"] == 0.9
+
+
+def test_nap_now_picks_a_time_and_explains_it_without_gemini(client, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    _short_night()
+    lecture = CalendarEvent(title="Maths lecture", start=datetime(2026, 11, 16, 16),
+                            end=datetime(2026, 11, 16, 17), category=EventCategory.LECTURE)
+    db.replace_calendar_events([lecture])
+    plan = client.post("/api/me/nap-now").json()
+    assert plan["status"] in ("now", "later", "none")
+    assert "with_nap" not in plan  # the button doesn't need the chart data
+    if plan["status"] != "none":
+        lie, alarm = datetime.fromisoformat(plan["lie_down"]), datetime.fromisoformat(plan["alarm"])
+        assert instant(lie) >= instant(NOW) - timedelta(minutes=1) and instant(alarm) > instant(lie)
+        assert plan["sleep_min"] in (10, 20, 90)
+        assert instant(alarm) <= instant(lecture.start)  # never sleeps through the lecture
+    reason = client.post("/api/me/nap-now/reason").json()
+    assert reason["source"] == "doze" and reason["reason"]
+    if plan["status"] != "none":
+        assert "Maths lecture" in reason["reason"]
+
+
+def test_nap_reason_uses_gemini_text_when_available(client, monkeypatch):
+    from app.services import nap_now
+    seen = {}
+
+    def fake_gemini(facts):
+        seen.update(facts)
+        return "Your lecture is at 16:00, so a short nap now keeps you sharp for it."
+
+    monkeypatch.setattr(nap_now, "_gemini_reason", fake_gemini)
+    _short_night()
+    reason = client.post("/api/me/nap-now/reason").json()
+    assert reason == {"reason": "Your lecture is at 16:00, so a short nap now keeps you sharp for it.", "source": "gemini"}
+    # Gemini only sees facts the maths produced, never raw records or account details.
+    assert {"decision", "lie_down", "doze_reasons", "events_today_and_tomorrow_morning"} <= set(seen)
+    assert "email" not in str(seen)
+
+
+def test_today_shows_one_nap_button_not_a_no_nap_message(client):
+    _short_night()
+    page = client.get("/dashboard").text
+    assert "data-nap-widget" in page and "Tap for a nap" in page
+    assert "No nap is suggested right now" not in page and "Review nap options" not in page

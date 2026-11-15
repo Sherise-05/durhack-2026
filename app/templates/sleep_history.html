@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Sleep history | Doze{% endblock %}
+{% block title %}My sleep | Doze{% endblock %}
 {% block content %}
 <section class="welcome page-heading">
-    <div><p class="eyebrow">YOUR SLEEP, OVER TIME</p><h1>Sleep history</h1><p>Log completed sleep and how refreshed you felt. Your next recommendations use these saved records.</p></div>
+    <div><p class="eyebrow">MY SLEEP</p><h1>How you've been sleeping</h1><p>Every night you log, and how refreshed you felt, teaches Doze a little more about you.</p></div>
     <a class="button secondary" href="/profile">Your usual routine</a>
 </section>
 {% if error %}<div class="notice warning" role="alert"><strong>We couldn’t save that sleep yet.</strong><p>{{ error }}</p></div>{% endif %}
 
 <section id="log-sleep" class="card blue-card" aria-labelledby="log-title">
-    <p class="eyebrow">{{ 'UPDATE YOUR CHECK-IN' if editing.source_id else 'A QUICK CHECK-IN' }}</p>
-    <h2 id="log-title">{{ 'Edit sleep record' if editing.source_id else 'Log your sleep' }}</h2>
+    <p class="eyebrow">{{ 'UPDATE A NIGHT' if editing.source_id else 'ADD A NIGHT OR NAP' }}</p>
+    <h2 id="log-title">{{ 'Edit this sleep' if editing.source_id else 'Log a sleep' }}</h2>
     <p class="muted">Tell us when you went to bed and woke up. Times are shown in Europe/London.</p>
     <form method="post" action="/sleep-history" class="planner-form">
         <input type="hidden" name="source_id" value="{{ editing.source_id or '' }}">
@@ -51,7 +51,7 @@
 </section>
 
 <section id="saved-sleep" class="section-gap" aria-labelledby="saved-title">
-    <div class="section-heading"><h2 id="saved-title">Saved sleep</h2><p class="muted">{{ records|length }} {{ 'record' if records|length == 1 else 'records' }}</p></div>
+    <div class="section-heading"><h2 id="saved-title">Your nights</h2><p class="muted">{{ records|length }} logged</p></div>
     {% if records %}
     <div class="record-list">
         {% for record in records[:7] %}{% include '_sleep_record.html' %}{% endfor %}
@@ -65,7 +65,7 @@
 </section>
 
 <details class="card section-gap advanced-options">
-    <summary>How Doze is learning about you</summary>
+    <summary>What Doze has learned about you</summary>
     <p class="muted">Check-ins gradually update model estimates. Neutral morning check-ins do not change estimated sleep need.</p>
     <div class="stats-grid section-gap" aria-label="Personal estimates">
         <div><p class="card-label">Estimated sleep need</p><p class="metric-value">{{ personal.need.mean|duration_h }}</p><p class="muted">{{ personal.need.n }} informative morning check-ins</p></div>

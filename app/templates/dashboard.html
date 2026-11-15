@@ -8,6 +8,26 @@
 </section>
 
 <div class="today-layout">
+{% if last_night_guess %}
+<section class="card checkin-card" id="check-in" aria-labelledby="checkin-title">
+    <p class="eyebrow">MORNING CHECK-IN</p>
+    <h2 id="checkin-title">How did you sleep last night?</h2>
+    <form method="post" action="/sleep-history" class="checkin-form">
+        <input type="hidden" name="next" value="/dashboard">
+        <div class="form-grid">
+            <div class="field"><label for="checkin-start">Fell asleep around</label><input id="checkin-start" name="start" type="text" data-datetime-field value="{{ last_night_guess.start }}" required></div>
+            <div class="field"><label for="checkin-end">Woke up</label><input id="checkin-end" name="end" type="text" data-datetime-field value="{{ last_night_guess.end }}" required></div>
+        </div>
+        <p class="checkin-question">How refreshed do you feel? <span class="muted">Tap to save.</span></p>
+        <div class="rating-row" role="group" aria-label="How refreshed do you feel, 1 to 5">
+            {% for value, face, label in [(1, '😫', 'Exhausted'), (2, '😪', 'Groggy'), (3, '😐', 'OK'), (4, '🙂', 'Rested'), (5, '😄', 'Great')] %}
+            <button class="rating-button" type="submit" name="rating" value="{{ value }}"><span aria-hidden="true">{{ face }}</span>{{ label }}</button>
+            {% endfor %}
+        </div>
+        <p class="muted">Pre-filled from your usual routine, so adjust the times if last night was different. Your ratings teach Doze how much sleep you need.</p>
+    </form>
+</section>
+{% endif %}
 <section class="stats-grid today-overview" aria-label="Your sleep context">
     <article class="card">
         {% if not bedtime.feasible %}
@@ -52,24 +72,18 @@
 
 <section class="dashboard-grid today-plans" aria-label="Your next step and bedtime plan">
     <article class="card feature-card">
+        {% if next_action.kind in ('nap', 'rest', 'log') %}
+        <p class="eyebrow">NAP</p>
+        <h2>Need a recharge?</h2>
+        {% include "_nap_button.html" %}
+        {% else %}
         <p class="eyebrow">YOUR NEXT STEP</p>
         <h2>{{ next_action.title }}</h2>
-        {% if next_action.kind == 'nap' %}
-        <div class="recommendation">
-            <div><p class="metric-value">{{ next_action.nap.sleep_min }} min</p><p class="muted">Aim for time asleep</p></div>
-            <div><p class="metric-value">{{ next_action.nap.alarm|clock_ceil }}</p><p class="muted">Suggested alarm</p></div>
-        </div>
-        {% endif %}
         <p>{{ next_action.body }}</p>
         <div class="action-row section-gap">
             <a class="button" href="{{ next_action.href }}">{{ next_action.label }} <span aria-hidden="true">→</span></a>
-            {% if next_action.kind != 'log' %}<a class="text-link" href="/sleep-history#log-sleep">Log sleep</a>{% endif %}
         </div>
-        {% if next_action.nap %}
-        {% if next_action.nap.warnings %}<div class="notice warning section-gap"><ul>{% for warning in next_action.nap.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
-        <details class="section-gap"><summary>Why this suggestion?</summary><ul>{% for reason in next_action.nap.reasons %}<li>{{ reason|nap_reason(next_action.nap) }}</li>{% endfor %}</ul></details>
         {% endif %}
-        {% if next_action.kind == 'nap' %}<p class="muted section-gap">Set any suggested alarm on your device. Reviewing a plan does not start a sleep record.</p>{% endif %}
     </article>
 
     <article class="card">
@@ -102,11 +116,12 @@
         <div class="card-heading"><h2>Recent recorded sleep</h2><span class="muted">Last 7 dates</span></div>
         {% if has_completed_history %}
         <p class="muted">Estimated hours asleep from completed primary sleep, grouped by wake-up date. Missing nights stay empty.</p>
-        <canvas class="alertness-chart" data-chart="dashboard-sleep" data-chart-kind="bar" aria-label="Estimated recorded sleep in hours for the last seven dates; missing dates are not zero" role="img">Visit sleep history to review each completed record.</canvas>
+        <canvas class="alertness-chart" data-chart="dashboard-sleep" data-chart-kind="bar" aria-label="Estimated recorded sleep in hours for the last seven dates; missing dates are not zero" role="img">Open My sleep to review each logged night.</canvas>
         <script type="application/json" id="dashboard-sleep">{{ recent_sleep_chart|tojson }}</script>
-        <p class="muted">The reference shows your current estimated sleep need, rather than a historical or clinical target.</p>
+        <p class="muted">The reference line is your current estimated sleep need.</p>
+        <a class="text-link" href="/sleep-history">See all nights →</a>
         {% else %}
-        <div class="empty-state"><h3>No recorded nights yet.</h3><p>Your usual schedule is a routine, not a sleep record. Actual entries will build this history.</p></div>
+        <div class="empty-state"><h3>No nights logged yet.</h3><p>Do the morning check-in above, and your nights will show up here.</p></div>
         {% endif %}
     </article>
 </section>

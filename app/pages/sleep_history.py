@@ -61,6 +61,7 @@ def save_sleep_form(
     source_id: Annotated[str, Form()] = "",
     hrv_ms: Annotated[str, Form()] = "",
     latency_min: Annotated[str, Form()] = "",
+    return_to: Annotated[str, Form(alias="next")] = "",
 ):
     values = {"start": start, "end": end, "efficiency": efficiency, "is_nap": is_nap,
               "rating": rating or None, "episode_id": episode_id.strip() or None,
@@ -75,7 +76,8 @@ def save_sleep_form(
         editing = {**values, "source_id": source_id}
         return web.templates.TemplateResponse(request=request, name="sleep_history.html",
                                               context=_history_context(error=message, editing=editing), status_code=422)
-    return RedirectResponse("/sleep-history", status_code=303)
+    # The Today check-in returns to Today; everything else stays on My sleep.
+    return RedirectResponse("/dashboard" if return_to == "/dashboard" else "/sleep-history", status_code=303)
 
 
 @router.post("/sleep-history/{source_id}/delete")

@@ -7,11 +7,6 @@
     <h1>Make room for a better night.</h1>
     <p>A plan shaped around your routine, recorded sleep and upcoming commitments.</p>
 </section>
-<nav class="plan-tabs" aria-label="Sleep planning">
-    <a href="/nap-planner">Nap</a>
-    <a href="/sleep-planner" {% if not is_what_if %}aria-current="page"{% endif %}>Tonight</a>
-    <a href="/sleep-planner#what-if" {% if is_what_if %}aria-current="page"{% endif %}>What-if</a>
-</nav>
 {% if not has_sleep_history %}
 <p class="notice">This starting plan uses your profile defaults. <a href="/sleep-history#log-sleep">Record last night’s sleep</a> to personalise it.</p>
 {% endif %}

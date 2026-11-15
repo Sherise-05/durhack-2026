@@ -39,8 +39,10 @@ def payload(response, element_id):
 def test_new_user_and_nap_only_history_do_not_fabricate_primary_sleep(client):
     empty = client.get("/dashboard")
     assert empty.status_code == 200
-    assert empty.context["next_action"]["kind"] == "log"
-    assert "profile defaults" in empty.text
+    # Logging is offered by the morning check-in card; its pre-filled routine is not saved.
+    assert empty.context["last_night_guess"] is not None
+    assert 'id="check-in"' in empty.text
+    assert "Starting estimate from your profile" in empty.text
     assert 'id="dashboard-sleep"' not in empty.text
     assert 'id="dashboard-curve"' not in empty.text
 
@@ -49,6 +51,7 @@ def test_new_user_and_nap_only_history_do_not_fabricate_primary_sleep(client):
     assert nap_only.context["has_sleep_history"] is True
     assert nap_only.context["has_completed_history"] is False
     assert nap_only.context["snapshot"].last_night is None
+    assert 'id="check-in"' in nap_only.text  # a nap is not last night's sleep
     assert 'id="dashboard-sleep"' not in nap_only.text
 
 

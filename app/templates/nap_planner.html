@@ -3,47 +3,47 @@
 {% block content %}
 <section class="welcome">
     <p class="eyebrow">YOUR PLAN</p>
-    <h1>A little rest, at the right time.</h1>
-    <p>Tell us how you feel. Your sleep and schedule help decide what fits now.</p>
+    <h1>Tired? Tap for a nap.</h1>
+    <p>Doze picks the best time today for a nap, counts down to it and rings when it’s time to wake up.</p>
 </section>
-<nav class="plan-tabs" aria-label="Sleep planning">
-    <a href="/nap-planner" aria-current="page">Nap</a>
-    <a href="/sleep-planner">Tonight</a>
-    <a href="/sleep-planner#what-if">What-if</a>
-</nav>
 {% if not has_sleep_history %}
 <p class="notice">Your starting estimate uses your profile defaults and how you feel. <a href="/sleep-history#log-sleep">Add last night’s sleep</a> to make it more personal.</p>
 {% endif %}
 <div class="dashboard-grid section-gap">
 <section class="card">
-    <p class="eyebrow">CHECK IN WITH YOURSELF</p>
-    <h2>How are you feeling?</h2>
-    <form action="/nap-planner" method="post" class="planner-form">
-        <label for="tiredness">How tired do you feel?</label>
-        <select id="tiredness" name="tiredness" required>
-            <option value="" disabled {% if not tiredness %}selected{% endif %}>Choose how you feel</option>
-            <option value="fine" {% if tiredness == 'fine' %}selected{% endif %}>Fine</option>
-            <option value="tired" {% if tiredness == 'tired' %}selected{% endif %}>Tired</option>
-            <option value="very_tired" {% if tiredness == 'very_tired' %}selected{% endif %}>Very tired</option>
-        </select>
-        <p class="muted">This check-in helps with this recommendation. It does not record a completed sleep.</p>
-        <button class="button" type="submit">Find my nap</button>
-    </form>
+    <p class="eyebrow">THE NAP BUTTON</p>
+    <h2>Feeling tired?</h2>
+    {% include "_nap_button.html" %}
+    <details class="section-gap">
+        <summary>Compare nap options in detail</summary>
+        <form action="/nap-planner#nap-result" method="post" class="nap-chips">
+            <span class="muted">How tired are you right now?</span>
+            <button class="nap-chip" type="submit" name="tiredness" value="fine">Fine</button>
+            <button class="nap-chip" type="submit" name="tiredness" value="tired">Tired</button>
+            <button class="nap-chip" type="submit" name="tiredness" value="very_tired">Very tired</button>
+        </form>
+        <p class="muted">Shows a nap starting right now, with the alertness chart. This doesn't record a sleep or set an alarm.</p>
+    </details>
 </section>
 {% if plan %}
-<section class="card feature-card" aria-live="polite">
-    <p class="eyebrow">YOUR NEXT STEP</p>
+<section class="card feature-card" id="nap-result" aria-live="polite">
+    <p class="eyebrow">{% if tiredness == 'very_tired' %}YOU SAID: VERY TIRED{% elif tiredness == 'fine' %}YOU SAID: JUST CHECKING{% else %}YOU SAID: TIRED{% endif %}</p>
     {% if plan.should_nap and plan.alarm %}
-    <h2>{% if plan.sleep_min >= 90 %}A longer rest could fit.{% else %}A short recharge could fit.{% endif %}</h2>
+    <h2>{% if plan.kind == 'full_cycle' %}Take a full-cycle nap.{% else %}Take a {{ plan.sleep_min }}-minute power nap.{% endif %}</h2>
+    <ol class="night-timeline nap-timeline" aria-label="Your nap">
+        <li class="nt-stop"><div><span class="nt-label">Lie down</span></div><time class="nt-time" datetime="{{ plan.lie_down.isoformat() }}">{{ plan.lie_down|clock }}</time></li>
+        <li class="nt-span nt-sleep">≈ {{ plan.sleep_min }} min asleep</li>
+        <li class="nt-stop nt-stop-wake"><div><span class="nt-label">Alarm</span><span class="nt-day">includes time to fall asleep</span></div><time class="nt-time" datetime="{{ plan.alarm.isoformat() }}">{{ plan.alarm|clock_ceil }}</time></li>
+    </ol>
+    {% if plan.alertness_now is not none and plan.alertness_after is not none %}
     <div class="stats-grid metric-pair">
-        <div><span class="card-label">Aim for time asleep</span><p class="metric-value">{{ plan.sleep_min }} min</p></div>
-        <div><span class="card-label">Suggested alarm</span><p class="metric-value">{{ plan.alarm|clock_ceil }}</p></div>
+        <div><span class="card-label">Alertness now → after</span><p class="metric-value">{{ plan.alertness_now|round|int }} → {{ plan.alertness_after|round|int }}</p><p class="muted">Model estimate, 0–100, 30 min after the alarm</p></div>
+        <div><span class="card-label">Cost to tonight</span><p class="metric-value">{{ plan.tonight_cost_pct|round|int }}%</p><p class="muted">of tonight's sleep pressure used up</p></div>
     </div>
-    <p>Lie down {{ plan.lie_down|datetime_label }}. Your suggested alarm includes time to fall asleep.</p>
-    <p class="muted">Set this alarm on your device. Doze has not started an alarm or recorded a sleep.</p>
+    {% endif %}
     {% else %}
-    <h2>{{ plan.headline }}</h2>
-    <p>No nap is recommended right now. This result has not started an alarm or recorded a sleep.</p>
+    <h2>Skip the nap for now.</h2>
+    <p>{{ plan.headline }}</p>
     <div class="action-row"><a class="button secondary" href="/sleep-planner">See tonight’s plan</a></div>
     {% endif %}
     <details class="section-gap">

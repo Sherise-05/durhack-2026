@@ -110,6 +110,48 @@ small { font-size: .8rem; line-height: 1.5; color: var(--muted); font-weight: 40
 .timeline dt, .timeline dd { margin: 0; }
 .card-sub { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .card-sub p { margin: 4px 0 0; }
+/* Morning check-in on Today */
+.checkin-card { margin-bottom: 22px; background: linear-gradient(135deg, var(--primary-light), var(--blue-light)); }
+.checkin-question { margin: 16px 0 10px; font-weight: 650; }
+.rating-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.rating-button { display: grid; justify-items: center; gap: 4px; padding: 12px 4px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; transition: transform .1s ease; }
+.rating-button span { font-size: 1.6rem; line-height: 1; }
+.rating-button:hover { border-color: var(--primary); background: var(--primary-light); }
+.rating-button:active { transform: scale(.96); }
+.rating-button:focus-visible { outline: 3px solid var(--brand-blue); outline-offset: 2px; }
+@media (max-width: 420px) { .rating-button { font-size: .72rem; padding: 10px 2px; } }
+/* One-tap nap button */
+.nap-button-form { display: grid; gap: 10px; margin: 14px 0 8px; }
+.nap-button { display: flex; align-items: center; gap: 16px; width: 100%; padding: 18px 22px; border: 0; border-radius: 18px; background: linear-gradient(135deg, var(--primary), #7b4f8c); color: #fff; font: inherit; text-align: left; cursor: pointer; box-shadow: 0 10px 24px rgba(84, 54, 95, .25); transition: transform .12s ease, box-shadow .12s ease; }
+.nap-button:hover { background: linear-gradient(135deg, var(--primary-hover), #6a4179); }
+.nap-button:active { transform: scale(.98); box-shadow: 0 4px 12px rgba(84, 54, 95, .25); }
+.nap-button:focus-visible, .nap-chip:focus-visible { outline: 3px solid var(--brand-blue); outline-offset: 3px; }
+.nap-button-icon { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 50%; background: rgba(255, 255, 255, .18); font-size: 1.6rem; }
+.nap-button strong { display: block; font-size: 1.2rem; }
+.nap-button small { display: block; color: rgba(255, 255, 255, .82); font-size: .85rem; }
+.nap-button-text { display: grid; gap: 2px; min-width: 0; }
+.nap-widget { margin: 14px 0 6px; }
+.nap-widget[data-state="waiting"] .nap-button strong, .nap-widget[data-state="napping"] .nap-button strong { font-size: 2.1rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.nap-widget[data-state="waiting"] .nap-button, .nap-widget[data-state="napping"] .nap-button { cursor: default; }
+.nap-widget[data-state="napping"] .nap-button { background: linear-gradient(135deg, #2b2f55, #54365f); }
+.nap-widget[data-state="ringing"] .nap-button { background: linear-gradient(135deg, #c2577a, #e08a4f); }
+.nap-widget[data-state="none"] .nap-button { background: linear-gradient(135deg, #3d6f8c, #54365f); }
+.nap-widget[data-state="loading"] .nap-button { opacity: .85; cursor: progress; }
+.nap-panel { margin-top: 14px; }
+.nap-reason { padding: 14px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); }
+.nap-reason-label { margin: 0 0 4px; color: var(--primary); font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.nap-reason p:last-child { margin: 0; }
+.nap-panel .notice { margin: 12px 0 0; padding-left: 36px; }
+.nap-footnote { margin: 10px 0 0; font-size: .8rem; }
+@media (prefers-reduced-motion: no-preference) {
+    .nap-widget[data-state="ringing"] .nap-button { animation: nap-pulse 1s ease-in-out infinite; }
+    .nap-widget[data-state="loading"] .nap-button-icon { animation: nap-spin 1.2s linear infinite; }
+}
+@keyframes nap-pulse { 50% { transform: scale(1.02); box-shadow: 0 14px 34px rgba(194, 87, 122, .45); } }
+@keyframes nap-spin { to { transform: rotate(360deg); } }
+.nap-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.nap-chip { padding: 8px 16px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--primary); font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; }
+.nap-chip:hover { background: var(--primary-light); }
 /* Tonight timeline: stops on a rail, dashed wind-down, solid sleep bar. */
 .night-timeline { list-style: none; margin: 20px 0 14px; padding: 0; }
 .night-timeline li { position: relative; padding-left: 36px; }

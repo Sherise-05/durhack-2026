@@ -1,7 +1,7 @@
 
 """A contextual Today page over the inputs shared by every planner."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -11,7 +11,7 @@ from app.schemas import EventCategory
 from app.services import db, planner
 from app.services.nap_recc import recommend_nap
 from app.services.sleep_model import PersonModel, nightly_stats
-from app.time_utils import instant
+from app.time_utils import instant, local_isoformat
 
 router = APIRouter()
 
@@ -37,18 +37,28 @@ def _recent_sleep(nights, now, need_h):
     }
 
 
+def _last_night_guess(profile, now):
+    """Pre-fill the morning check-in with last night's usual routine.
+
+    Only a suggestion for the form: nothing is saved until the user taps a rating.
+    """
+    today = now.date()
+    wake = datetime.combine(today, profile.usual_wake)
+    if instant(wake) > instant(now):  # up before the usual alarm: use now
+        wake = now.replace(second=0, microsecond=0)
+    bed_day = today if profile.usual_bedtime < profile.usual_wake else today - timedelta(days=1)
+    bed = datetime.combine(bed_day, profile.usual_bedtime)
+    if instant(bed) >= instant(wake):
+        bed -= timedelta(days=1)
+    return {"start": local_isoformat(bed), "end": local_isoformat(wake)}
+
+
 def _next_step(data, now, model, snapshot, bedtime):
     if bedtime.in_progress:
         return {
             "kind": "in_progress", "title": "Your sleep is already in progress.",
             "body": "Review your existing wake-up plan rather than starting another sleep window.",
             "href": "/sleep-planner", "label": "View your wake-up plan", "nap": None,
-        }
-    if snapshot.last_night is None:
-        return {
-            "kind": "log", "title": "Start with your most recent night.",
-            "body": "Your starting plan uses profile defaults and any saved history. Record your latest completed sleep to make it more personal.",
-            "href": "/sleep-history#log-sleep", "label": "Log your sleep", "nap": None,
         }
     if now.hour >= 20 or now.hour < 5:
         return {
@@ -92,6 +102,7 @@ def dashboard(request: Request):
             "recent_sleep_chart": _recent_sleep(nights, now, snapshot.sleep_need_h),
             "has_sleep_history": bool(data.sessions),
             "has_completed_history": bool(nights),
+            "last_night_guess": None if snapshot.last_night or bedtime.in_progress else _last_night_guess(data.profile, now),
         },
     )
 
