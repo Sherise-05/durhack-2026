@@ -1,27 +1,63 @@
-
 {% extends "base.html" %}
-
 {% block title %}Calendar | Doze{% endblock %}
-
 {% block content %}
 <section class="welcome">
     <p class="eyebrow">YOUR SCHEDULE</p>
-    <h1>My Calendar</h1>
-    <p>See your upcoming commitments and find time to rest.</p>
+    <h1>Make space for rest.</h1>
+    <p>See what is coming up and keep your sleep plans in step with your day.</p>
 </section>
-
+<div class="dashboard-grid">
 <section class="card">
-    <h2>Upcoming Events</h2>
-
+    <p class="eyebrow">UP NEXT</p>
+    <h2>Upcoming events</h2>
     {% for event in events %}
     <div class="event">
         <span class="event-time">
-            {{ event.start }}
+            <time datetime="{{ event.start }}">{{ event.start|date_label if event.all_day else event.start|datetime_label }}</time>
         </span>
-        <span>{{ event.title }}</span>
+        <div><strong>{{ event.title }}</strong><p class="muted">{% if event.all_day %}All day{% elif not event.blocks_sleep %}Does not block sleep{% else %}Until {{ event.end|datetime_label }}{% endif %}</p></div>
     </div>
     {% else %}
-    <p class="muted">No upcoming events.</p>
+    <div class="empty-state">
+        <p>No upcoming events.</p>
+        <p class="muted">{% if connected %}Sync your calendar after changing your schedule.{% else %}Connect a calendar when you are ready. A starting sleep plan is available without one.{% endif %}</p>
+    </div>
     {% endfor %}
 </section>
+
+<section class="card feature-card">
+    <p class="eyebrow">YOUR CONNECTION</p>
+    <h2>Google Calendar</h2>
+    {% if connected %}
+    <p>Connected. Plans use the last schedule you synced.</p>
+    <div class="action-row"><form method="post" action="/calendar/sync"><button class="button" type="submit">Sync calendar</button></form></div>
+    <details class="section-gap"><summary>Manage connection</summary>
+        <p>Disconnecting also removes imported events from this app.</p>
+        <form method="post" action="/calendar/disconnect"><button class="button secondary" type="submit">Disconnect calendar</button></form>
+    </details>
+    {% else %}
+    <p>Connect your calendar so recommendations can leave room for your commitments.</p>
+    <div class="action-row"><a class="button" href="/auth/google">Connect Google Calendar</a></div>
+    <p class="muted">Optional. Until then, plans use your usual schedule and any previously saved events.</p>
+    {% endif %}
+    {% if synced_at %}<p class="demo-note">Last synced <time datetime="{{ synced_at }}">{{ synced_at|datetime_label }}</time>. Sync again after schedule changes.</p>{% endif %}
+    {% if sync_error %}<p class="notice warning" role="alert">{{ sync_error }}</p>{% endif %}
+</section>
+</div>
+{% if recent_events %}
+<details class="card section-gap">
+    <summary>Recent events</summary>
+    {% for event in recent_events %}
+    <div class="event">
+        <span class="event-time"><time datetime="{{ event.start }}">{{ event.start|date_label if event.all_day else event.start|datetime_label }}</time></span>
+        <div><strong>{{ event.title }}</strong><p class="muted">{% if event.all_day %}All day{% elif not event.blocks_sleep %}Does not block sleep{% else %}Completed{% endif %}</p></div>
+    </div>
+    {% endfor %}
+</details>
+{% endif %}
+<details class="card section-gap">
+    <summary>How your calendar shapes your plan</summary>
+    <p>Busy timed events help set scheduling limits. All-day entries and events that do not block time stay visible but do not set wake-up deadlines.</p>
+    <p class="muted">Imported events currently use a general category and no travel buffer. Automatic event categorisation and travel-time estimates are not connected.</p>
+</details>
 {% endblock %}

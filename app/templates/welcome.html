@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Sleep smarter | Doze{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', path='/css/onboarding.css') }}?v=1">{% endblock %}
+{% block content %}
+<div class="doze-flow flow-welcome">
+    <section class="flow-hero" aria-labelledby="welcome-title">
+        <div class="flow-hero-copy">
+            <p class="eyebrow">SLEEP SMARTER.</p>
+            <h1 id="welcome-title">Rest that fits<br>your day.</h1>
+            <p class="flow-intro">Nap and bedtime suggestions shaped around your sleep, routine and schedule. Make room to recharge, one day at a time.</p>
+            <div class="action-row"><a class="button" href="/signup">Personalise my plan <span aria-hidden="true">→</span></a><a class="button secondary" href="/login">Log in</a></div>
+            <p class="flow-caption">Your sleep. Your rhythm.</p>
+        </div>
+        <aside class="card flow-rhythm" aria-label="A calmer daily rhythm">
+            <span class="flow-moon" aria-hidden="true">☾</span>
+            <p class="eyebrow">ROOM TO REST</p>
+            <h2>A little more rhythm.<br>A little less guesswork.</h2>
+            <ol class="flow-rhythm-list">
+                <li><span class="flow-rhythm-dot" aria-hidden="true"></span><div><strong>Find a moment to recharge</strong><p>Nap suggestions with your day in mind.</p></div></li>
+                <li><span class="flow-rhythm-dot" aria-hidden="true"></span><div><strong>Make space for tonight</strong><p>A bedtime plan you can understand.</p></div></li>
+                <li><span class="flow-rhythm-dot" aria-hidden="true"></span><div><strong>Build a picture over time</strong><p>Check-ins help personalise your estimates.</p></div></li>
+            </ol>
+        </aside>
+    </section>
+    <section class="flow-how" aria-labelledby="how-title">
+        <h2 id="how-title">Start with you.</h2>
+        <p class="muted">A few small steps toward a plan that fits your routine.</p>
+        <ol class="flow-steps">
+            <li><span class="flow-step-number" aria-hidden="true">1</span><div><h3>Create your account</h3><p>Keep your profile and sleep records together.</p></div></li>
+            <li><span class="flow-step-number" aria-hidden="true">2</span><div><h3>Tell Doze about your day</h3><p>A short conversation helps build your starting profile.</p></div></li>
+            <li><span class="flow-step-number" aria-hidden="true">3</span><div><h3>Review your plan</h3><p>Confirm your routine, then explore your dashboard.</p></div></li>
+        </ol>
+    </section>
+</div>
+{% endblock %}

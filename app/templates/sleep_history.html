@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Sleep history | Doze{% endblock %}
+{% block content %}
+<section class="welcome page-heading">
+    <div><p class="eyebrow">YOUR SLEEP, OVER TIME</p><h1>Sleep history</h1><p>Log completed sleep and how refreshed you felt. Your next recommendations use these saved records.</p></div>
+    <a class="button secondary" href="/profile">Your usual routine</a>
+</section>
+{% if error %}<div class="notice warning" role="alert"><strong>We couldn’t save that sleep yet.</strong><p>{{ error }}</p></div>{% endif %}
+
+<section id="log-sleep" class="card blue-card" aria-labelledby="log-title">
+    <p class="eyebrow">{{ 'UPDATE YOUR CHECK-IN' if editing.source_id else 'A QUICK CHECK-IN' }}</p>
+    <h2 id="log-title">{{ 'Edit sleep record' if editing.source_id else 'Log your sleep' }}</h2>
+    <p class="muted">Tell us when you went to bed and woke up. Times are shown in Europe/London.</p>
+    <form method="post" action="/sleep-history" class="planner-form">
+        <input type="hidden" name="source_id" value="{{ editing.source_id or '' }}">
+        <div class="form-grid">
+            <div class="field">
+                <label for="sleep-start">Into bed</label>
+                <input id="sleep-start" name="start" type="text" data-datetime-field value="{{ editing.start or '' }}" placeholder="YYYY-MM-DDTHH:MM+00:00" required>
+                <small data-datetime-help>Use a timestamp with its timezone offset, for example 2026-11-15T23:00+00:00.</small>
+            </div>
+            <div class="field">
+                <label for="sleep-end">Wake-up</label>
+                <input id="sleep-end" name="end" type="text" data-datetime-field value="{{ editing.end or '' }}" placeholder="YYYY-MM-DDTHH:MM+00:00" required>
+                <small data-datetime-help>Keep the offset to distinguish repeated times when the clocks change.</small>
+            </div>
+            <div class="field">
+                <label for="sleep-rating">How refreshed did you feel?</label>
+                <select id="sleep-rating" name="rating">
+                    <option value="" {% if not editing.rating %}selected{% endif %}>No check-in yet</option>
+                    {% for value, label in [(1, '1 — Very poor / very groggy'), (2, '2 — Poor / groggy'), (3, '3 — Neutral'), (4, '4 — Refreshed'), (5, '5 — Fully refreshed')] %}
+                    <option value="{{ value }}" {% if editing.rating|string == value|string %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <small>Rate how you felt after waking. You can add or change a check-in later.</small>
+            </div>
+            <div class="field"><label class="checkbox-label" for="sleep-is-nap"><input id="sleep-is-nap" name="is_nap" type="checkbox" value="true" {% if editing.is_nap %}checked{% endif %}> This was a nap</label><small>Leave unchecked for your main sleep.</small></div>
+        </div>
+        <details class="advanced-options">
+            <summary>More details, if you have them</summary>
+            <p class="muted">Optional watch measurements and sleep details. Unknown values can stay blank.</p>
+            <div class="form-grid section-gap">
+                <div class="field"><label for="sleep-efficiency">Sleep efficiency, 0–1</label><input id="sleep-efficiency" name="efficiency" type="number" min="0" max="1" step="0.01" value="{{ editing.get('efficiency', 0.9) }}" required><small>Fraction of time in bed spent asleep. 0.90 is an estimate if you have no measurement.</small></div>
+                <div class="field"><label for="sleep-latency">Minutes to fall asleep</label><input id="sleep-latency" name="latency_min" type="number" min="0" step="0.1" value="{{ editing.latency_min if editing.latency_min is not none and editing.latency_min is defined else '' }}"></div>
+                <div class="field"><label for="sleep-hrv">HRV (RMSSD), in milliseconds</label><input id="sleep-hrv" name="hrv_ms" type="number" min="0.01" step="0.01" value="{{ editing.hrv_ms if editing.hrv_ms is not none and editing.hrv_ms is defined else '' }}"></div>
+                <div class="field"><label for="sleep-episode">Sleep episode ID</label><input id="sleep-episode" name="episode_id" type="text" value="{{ editing.episode_id or '' }}"><small>Use the same ID only for fragments of one night.</small></div>
+            </div>
+        </details>
+        <div class="action-row"><button type="submit" class="button">{{ 'Save changes' if editing.source_id else 'Save sleep' }}</button>{% if editing.source_id %}<a class="button secondary" href="/sleep-history#saved-sleep">Cancel edit</a>{% endif %}</div>
+    </form>
+</section>
+
+<section id="saved-sleep" class="section-gap" aria-labelledby="saved-title">
+    <div class="section-heading"><h2 id="saved-title">Saved sleep</h2><p class="muted">{{ records|length }} {{ 'record' if records|length == 1 else 'records' }}</p></div>
+    {% if records %}
+    <div class="record-list">
+        {% for record in records[:7] %}{% include '_sleep_record.html' %}{% endfor %}
+    </div>
+    {% if records|length > 7 %}
+    <details class="section-gap"><summary>Show {{ records|length - 7 }} older records</summary><div class="record-list">{% for record in records[7:] %}{% include '_sleep_record.html' %}{% endfor %}</div></details>
+    {% endif %}
+    {% else %}
+    <div class="card empty-state"><h3>Your sleep story starts here</h3><p class="muted">No completed sleep recorded yet. Until you add history, recommendations use your profile and starting estimates.</p><a class="text-link" href="#log-sleep">Log your first night ↑</a></div>
+    {% endif %}
+</section>
+
+<details class="card section-gap advanced-options">
+    <summary>How Doze is learning about you</summary>
+    <p class="muted">Check-ins gradually update model estimates. Neutral morning check-ins do not change estimated sleep need.</p>
+    <div class="stats-grid section-gap" aria-label="Personal estimates">
+        <div><p class="card-label">Estimated sleep need</p><p class="metric-value">{{ personal.need.mean|duration_h }}</p><p class="muted">{{ personal.need.n }} informative morning check-ins</p></div>
+        <div><p class="card-label">Sleep need estimate range</p><p class="metric-value">{{ personal.need.low }}–{{ personal.need.high }} h</p><p class="muted">10th–90th percentile of the model estimate</p></div>
+        <div><p class="card-label">Nap grogginess sensitivity</p><p class="metric-value">{{ personal.inertia.mean }}×</p><p class="muted">{{ personal.inertia.n }} nap check-ins; 1× is the starting estimate</p></div>
+    </div>
+</details>
+{% if legacy_records %}
+<details class="card section-gap advanced-options">
+    <summary>Older records awaiting exact times</summary>
+    <p class="muted">These records have a date and duration but no actual bedtime or wake-up timestamp. They are preserved and excluded from calculations. Add them above with their actual times if available.</p>
+    {% for record in legacy_records %}<p>{{ record.date }} — {{ record.duration }} h — {{ record.quality }}</p>{% endfor %}
+</details>
+{% endif %}
+{% endblock %}

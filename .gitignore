@@ -6,6 +6,13 @@ venv/
 
 # API keys
 .env
+.env.*
+!.env.example
+instance/
+
+# Local design previews and browser QA output
+/work/design-previews/
+/work/ui-check/
 
 
 # Mac

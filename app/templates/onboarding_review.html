@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% set profile_values = values|default({}) %}
+{% block title %}Review your profile | Doze{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', path='/css/onboarding.css') }}?v=1">{% endblock %}
+{% block content %}
+<div class="doze-flow flow-review">
+    <header class="welcome">
+        <p class="eyebrow">YOUR PLAN STARTS HERE</p>
+        <h1>{{ 'Here’s what I understood.' if from_conversation else 'Let’s set up your routine.' }}</h1>
+        <p>Check these details and change anything that does not fit. Your confirmed routine will shape your starting plan.</p>
+    </header>
+    <div class="flow-setup-steps" aria-label="Account setup progress"><span>Account created <span aria-hidden="true">✓</span></span><span>Your routine</span><strong aria-current="step">Review profile</strong></div>
+    {% if error %}<div class="notice warning" role="alert"><strong>Check your details</strong><p>{{ error }}</p></div>{% endif %}
+    <section class="card" aria-labelledby="review-title">
+        <div class="section-heading"><div><p class="eyebrow">MAKE SURE THIS FEELS LIKE YOU</p><h2 id="review-title">Your everyday routine</h2></div><a class="text-link" href="/onboarding">Back to the conversation</a></div>
+        {% if defaults %}<div class="notice section-gap"><p><strong>Starting settings you can change</strong></p><ul>{% for setting in defaults %}<li>{{ setting }}</li>{% endfor %}</ul></div>{% endif %}
+        <form method="post" action="/onboarding/confirm" class="flow-review-form">
+            {% if revision is defined and revision is not none %}<input type="hidden" name="revision" value="{{ revision }}">{% endif %}
+            <div class="form-grid">
+                <div class="field"><label for="review-name">Name</label><input id="review-name" name="name" value="{{ profile_values.get('name') or '' }}" autocomplete="given-name" maxlength="80" required></div>
+                <div class="field"><label for="review-age">Age band</label><select id="review-age" name="age_band" required><option value="" disabled {% if not profile_values.get('age_band') %}selected{% endif %}>Choose your age band</option>{% for band in ['13-17', '18-25', '26-64', '65+'] %}<option value="{{ band }}" {% if profile_values.get('age_band') == band %}selected{% endif %}>{{ band }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="review-bedtime">Usual bedtime</label><input id="review-bedtime" name="usual_bedtime" type="time" value="{{ (profile_values.get('usual_bedtime') or '')[:5] }}" required><small>Your typical local bedtime, not a sleep you have already recorded.</small></div>
+                <div class="field"><label for="review-wake">Usual wake-up</label><input id="review-wake" name="usual_wake" type="time" value="{{ (profile_values.get('usual_wake') or '')[:5] }}" required></div>
+                <div class="field"><label for="review-routine">Morning routine, in minutes</label><input id="review-routine" name="morning_routine_min" type="number" min="0" max="1440" step="1" value="{{ profile_values.get('morning_routine_min') if profile_values.get('morning_routine_min') is not none else '' }}" required><small>Time from waking to being ready to leave.</small></div>
+                <div class="field"><label for="review-latency">Usual minutes to fall asleep</label><input id="review-latency" name="sleep_latency_min" type="number" min="0" max="90" step="0.1" value="{{ profile_values.get('sleep_latency_min') if profile_values.get('sleep_latency_min') is not none else 15 }}" required><small>An initial estimate. Your recorded sleep can help refine it.</small></div>
+                <div class="field"><label for="review-chronotype">Your body clock</label><select id="review-chronotype" name="chronotype" required>{% for key, label in [('neutral', 'Not sure'), ('early', 'I prefer early mornings'), ('late', 'I prefer later nights')] %}<option value="{{ key }}" {% if (profile_values.get('chronotype') or 'neutral') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="review-goal">What would you like help with? <span class="muted">(optional)</span></label><textarea id="review-goal" name="goal" rows="3" maxlength="300">{{ profile_values.get('goal') or '' }}</textarea><small>A personal goal to keep with your profile. It does not change your sleep-need estimate.</small></div>
+            </div>
+            <p class="flow-review-note">Your starting plan uses this routine. Logging completed sleep and adding check-ins later will help personalise the estimates. You can connect your calendar after setup.</p>
+            <div class="action-row"><button class="button" type="submit">Confirm profile and open my dashboard <span aria-hidden="true">→</span></button></div>
+        </form>
+    </section>
+</div>
+{% endblock %}

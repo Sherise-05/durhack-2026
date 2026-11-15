@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Tonight’s plan | Doze{% endblock %}
+{% block content %}
+{% set is_what_if = request.url.path.endswith('/what-if') %}
+<section class="welcome">
+    <p class="eyebrow">YOUR PLAN</p>
+    <h1>Make room for a better night.</h1>
+    <p>A plan shaped around your routine, recorded sleep and upcoming commitments.</p>
+</section>
+<nav class="plan-tabs" aria-label="Sleep planning">
+    <a href="/nap-planner">Nap</a>
+    <a href="/sleep-planner" {% if not is_what_if %}aria-current="page"{% endif %}>Tonight</a>
+    <a href="/sleep-planner#what-if" {% if is_what_if %}aria-current="page"{% endif %}>What-if</a>
+</nav>
+{% if not has_sleep_history %}
+<p class="notice">This starting plan uses your profile defaults. <a href="/sleep-history#log-sleep">Record last night’s sleep</a> to personalise it.</p>
+{% endif %}
+<section class="card blue-card section-gap">
+    <p class="eyebrow">TONIGHT</p>
+    {% if plan.feasible %}
+        <h2>{% if plan.in_progress %}Your night is already underway.{% else %}Your evening, made a little clearer.{% endif %}</h2>
+        {% if plan.in_progress %}
+        <p>Sleep is already in progress. Estimated remaining sleep: <strong>{{ '%.1f'|format(plan.remaining_sleep_h) }} h</strong>.</p>
+        {% else %}
+        <div class="stats-grid">
+            <div><span class="card-label">Wind down</span><p class="metric-value">{{ plan.wind_down|clock }}</p><p class="muted">{{ plan.wind_down|datetime_label }}</p></div>
+            <div><span class="card-label">Lights out</span><p class="metric-value">{{ plan.bedtime|clock }}</p><p class="muted">{{ plan.bedtime|datetime_label }}</p></div>
+            <div><span class="card-label">Wake up</span><p class="metric-value">{{ plan.alarm|clock_ceil }}</p><p class="muted">{{ plan.alarm|datetime_label }}</p></div>
+        </div>
+        {% endif %}
+        {% if plan.in_progress %}<p>Suggested wake-up: <strong>{{ plan.alarm|datetime_label }}</strong>.</p>{% endif %}
+        <p>Estimated total sleep: <strong>{{ '%.1f'|format(plan.sleep_h) }} h</strong> · estimated need {{ '%.1f'|format(plan.need_h) }} h.</p>
+        <p class="muted">Set the suggested alarm on your device.</p>
+    {% else %}
+    <h2>No suitable sleep window fits.</h2>
+    <p class="notice warning">No suitable sleep window fits. Review your commitments and the reasons below before making a plan.</p>
+    {% endif %}
+    <details class="section-gap" {% if not plan.feasible %}open{% endif %}>
+        <summary>Why this fits{% if not plan.feasible %} — and what needs attention{% endif %}</summary>
+        <ul>{% for reason in plan.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+    </details>
+</section>
+{% if plan.warnings %}<div class="notice warning section-gap" role="status"><ul>{% for warning in plan.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
+<section class="card section-gap" id="what-if">
+    <p class="eyebrow">EXPLORE ANOTHER PLAN</p>
+    <h2>What if I sleep at a different time?</h2>
+    <p class="muted">Compare one sleep window within the next seven days. This preview does not change your history or set an alarm.</p>
+    {% if error %}<p class="notice warning" role="alert">{{ error }}</p>{% endif %}
+    <form action="/sleep-planner/what-if" method="post" class="form-grid section-gap">
+        <div class="field">
+            <label for="bedtime">Lights out</label>
+            <input id="bedtime" name="bedtime" type="text" data-datetime-field required placeholder="Choose a date and time" {% if bedtime_input is not none and (error or preview or (plan.feasible and not plan.in_progress)) %}value="{{ bedtime_input }}"{% endif %}>
+        </div>
+        <div class="field">
+            <label for="alarm">Wake up</label>
+            <input id="alarm" name="alarm" type="text" data-datetime-field required placeholder="Choose a date and time" {% if alarm_input is not none and (error or preview or plan.feasible) %}value="{{ alarm_input }}"{% endif %}>
+        </div>
+        <div class="action-row"><button type="submit" class="button">Compare my plan</button></div>
+    </form>
+    <p class="demo-note">Times use Europe/London. If entering a timestamp directly, include its +01:00 or +00:00 offset when a clock time occurs twice.</p>
+</section>
+{% if preview %}
+<section class="card chart-section section-gap" aria-live="polite">
+    <p class="eyebrow">YOUR WHAT-IF RESULT</p>
+    <h2>Your hypothetical next day</h2>
+    <p>{{ preview.bedtime|datetime_label }} to {{ preview.alarm|datetime_label }} · estimated sleep {{ '%.1f'|format(preview.sleep_h) }} h.</p>
+    <p class="muted">Estimated alertness, on a 0–100 model scale. Gaps indicate sleep.</p>
+    {% if preview.warnings %}<div class="notice warning"><ul>{% for warning in preview.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
+    <canvas class="alertness-chart" data-chart="preview-curve" aria-label="Hypothetical alertness after the chosen sleep" role="img"></canvas>
+    <script type="application/json" id="preview-curve">{{ {"Preview": curve}|tojson }}</script>
+    {% if preview.events %}
+    <h3>Estimated alertness during your events</h3>
+    <ul>{% for event in preview.events %}<li>{{ event.title }} · {{ event.start|datetime_label }} · {{ event.alertness|round|int }}/100</li>{% endfor %}</ul>
+    {% endif %}
+    <details class="section-gap"><summary>Exact times used for this preview</summary><p>{{ bedtime_input }} to {{ alarm_input }}</p></details>
+</section>
+{% endif %}
+{% endblock %}

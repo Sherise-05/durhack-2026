@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Nap plan | Doze{% endblock %}
+{% block content %}
+<section class="welcome">
+    <p class="eyebrow">YOUR PLAN</p>
+    <h1>A little rest, at the right time.</h1>
+    <p>Tell us how you feel. Your sleep and schedule help decide what fits now.</p>
+</section>
+<nav class="plan-tabs" aria-label="Sleep planning">
+    <a href="/nap-planner" aria-current="page">Nap</a>
+    <a href="/sleep-planner">Tonight</a>
+    <a href="/sleep-planner#what-if">What-if</a>
+</nav>
+{% if not has_sleep_history %}
+<p class="notice">Your starting estimate uses your profile defaults and how you feel. <a href="/sleep-history#log-sleep">Add last night’s sleep</a> to make it more personal.</p>
+{% endif %}
+<div class="dashboard-grid section-gap">
+<section class="card">
+    <p class="eyebrow">CHECK IN WITH YOURSELF</p>
+    <h2>How are you feeling?</h2>
+    <form action="/nap-planner" method="post" class="planner-form">
+        <label for="tiredness">How tired do you feel?</label>
+        <select id="tiredness" name="tiredness" required>
+            <option value="" disabled {% if not tiredness %}selected{% endif %}>Choose how you feel</option>
+            <option value="fine" {% if tiredness == 'fine' %}selected{% endif %}>Fine</option>
+            <option value="tired" {% if tiredness == 'tired' %}selected{% endif %}>Tired</option>
+            <option value="very_tired" {% if tiredness == 'very_tired' %}selected{% endif %}>Very tired</option>
+        </select>
+        <p class="muted">This check-in helps with this recommendation. It does not record a completed sleep.</p>
+        <button class="button" type="submit">Find my nap</button>
+    </form>
+</section>
+{% if plan %}
+<section class="card feature-card" aria-live="polite">
+    <p class="eyebrow">YOUR NEXT STEP</p>
+    {% if plan.should_nap and plan.alarm %}
+    <h2>{% if plan.sleep_min >= 90 %}A longer rest could fit.{% else %}A short recharge could fit.{% endif %}</h2>
+    <div class="stats-grid metric-pair">
+        <div><span class="card-label">Aim for time asleep</span><p class="metric-value">{{ plan.sleep_min }} min</p></div>
+        <div><span class="card-label">Suggested alarm</span><p class="metric-value">{{ plan.alarm|clock_ceil }}</p></div>
+    </div>
+    <p>Lie down {{ plan.lie_down|datetime_label }}. Your suggested alarm includes time to fall asleep.</p>
+    <p class="muted">Set this alarm on your device. Doze has not started an alarm or recorded a sleep.</p>
+    {% else %}
+    <h2>{{ plan.headline }}</h2>
+    <p>No nap is recommended right now. This result has not started an alarm or recorded a sleep.</p>
+    <div class="action-row"><a class="button secondary" href="/sleep-planner">See tonight’s plan</a></div>
+    {% endif %}
+    <details class="section-gap">
+        <summary>Why this fits</summary>
+        <ul>{% for reason in plan.reasons %}<li>{{ reason|nap_reason(plan) }}</li>{% endfor %}</ul>
+    </details>
+</section>
+{% else %}
+<section class="card blue-card">
+    <p class="eyebrow">REST WITH YOUR DAY IN MIND</p>
+    <h2>A suggestion you can understand.</h2>
+    <p>Your recent sleep, available time and tonight’s bedtime shape the recommendation.</p>
+    <ul>
+        <li>A suggested alarm includes time to fall asleep.</li>
+        <li>A nap is suggested only when it fits the model and your schedule.</li>
+        <li>You can see the reasons behind the result.</li>
+    </ul>
+</section>
+{% endif %}
+</div>
+{% if plan and plan.warnings %}
+<div class="notice warning section-gap" role="status"><ul>{% for warning in plan.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>
+{% endif %}
+{% if plan and plan.with_nap and plan.without_nap %}
+<section class="card chart-section section-gap">
+    <p class="eyebrow">EXPLORE THE DIFFERENCE</p>
+    <h2>Estimated alertness with and without a nap</h2>
+    <p class="muted">Model estimates from 0–100, not measured energy. Gaps indicate sleep.</p>
+    <canvas class="alertness-chart" data-chart="nap-curves" aria-label="Estimated alertness with and without a nap; gaps indicate sleep" role="img"></canvas>
+    <script type="application/json" id="nap-curves">{{ curves|tojson }}</script>
+</section>
+{% endif %}
+{% endblock %}

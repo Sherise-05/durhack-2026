@@ -1,6 +1,53 @@
 # Backend handoff for the Doze brain
 
-This is the integration contract for the implemented planning services. The routes below are **proposed endpoints**, not existing routes. `app/main.py`, page handlers and `app/services/tiger_data.py` still need backend implementation. Do not put the sleep equations or Bayesian updates into Gemini or the database: the existing Python services calculate those outputs from persisted inputs.
+This is the integration contract for the implemented planning services. The local FastAPI application connects the pages to a SQLite adapter in `app/services/db.py`, with account-owned records in the ignored `instance/` directory. It now includes email/password authentication, revocable sessions and Gemini-assisted initial profile setup; it is not yet a Tiger Data adapter. Do not put the sleep equations or Bayesian updates into Gemini or the database: the existing Python services calculate those outputs from persisted inputs.
+
+## Implemented local integration
+
+Public entry is `GET /` (Welcome), followed by `/signup` or `/login`. New or
+unfinished accounts enter `/onboarding`, then `/onboarding/review`. An explicit
+validated `POST /onboarding/confirm` saves the profile and marks setup complete.
+The dashboard at `/dashboard` and all existing planning/history/calendar pages
+require completed setup. APIs return 401 when signed out and 403 when setup is
+unfinished. Completed returning accounts skip setup; `POST /logout` revokes the
+current server-side session. Existing unassigned prototype data is preserved
+without automatically assigning it to any new account.
+
+Gemini requests run server-side with bounded input, validated structured fields
+and supporting answer quotes. A change to an existing draft field must cite the
+current answer, so an old answer cannot undo a correction. The user reviews all
+fields before they influence planning. Provider failures preserve the answer and
+offer retry or explicit manual review; no fabricated AI reply or sleep record is
+used. `GEMINI_API_KEY` and optional `GEMINI_MODEL` belong in the ignored `.env`.
+
+| Endpoint | Behaviour |
+|---|---|
+| `GET /api/me/dashboard` | Saved inputs, current snapshot and alertness curve. |
+| `POST /api/me/nap-recommendation` | JSON `tiredness`: `fine`, `tired`, `very_tired` or null. |
+| `GET /api/me/bedtime-recommendation` | Current bedtime plan, including reasons, warnings and feasibility. |
+| `POST /api/me/what-if` | JSON bedtime/alarm; validates one future sleep window within seven days and at most 24 hours. Does not persist hypothetical sleep. |
+| `GET /api/me/sleep-history` | Canonical records, completed-night summaries, learned estimates and legacy rows excluded from calculations. |
+| `GET`, `PATCH /api/me/profile` | Read/update the validated local profile. |
+| `PUT`, `DELETE /api/me/sleep-sessions/{source_id}` | Save/update/delete completed sleep by stable source ID. Use 1–200 ASCII letters, digits, `_`, `-`, `.`, `:` (excluding `.` and `..` alone). Overlaps and future completed records are rejected. |
+| `PATCH /api/me/sleep-sessions/{source_id}/rating` | Update the existing record's 1–5 check-in. |
+| `GET /auth/google`, `GET /auth/callback` | Read-only Google OAuth with server-side state, PKCE and credential storage. |
+| `POST /calendar/sync`, `POST /calendar/disconnect` | Replace the saved Google snapshot or disconnect. Failed imports preserve the previous snapshot and show an error. |
+
+The calculation clock is controlled by the server. Pages do not fetch Google
+on every render; users explicitly sync after schedule changes. Only busy timed
+events become constraints; all-day/free/declined/cancelled entries do not.
+Imports preserve actual instants but currently use category `other` and zero
+travel minutes. There is no automatic event classification or routing estimate.
+Existing date/duration-only SQLite history is preserved without guessing its
+missing bedtime or wake-up timestamps.
+
+New travel profiles get a server-controlled `planned_from` creation date; edits
+preserve it. Clear the old trip before creating a different trip. Browser writes
+from other origins are rejected in addition to account authentication.
+
+The local wrapper is verified with temporary databases and simulated Google
+responses. Real account consent, a matching registered redirect URI and actual
+Tiger connectivity still require external setup and verification.
 
 ## What we need from the backend team first
 

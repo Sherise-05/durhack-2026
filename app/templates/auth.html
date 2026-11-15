@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% set signing_up = mode == 'signup' %}
+{% set form_values = values|default({}) %}
+{% block title %}{{ 'Create your account' if signing_up else 'Welcome back' }} | Doze{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', path='/css/onboarding.css') }}?v=1">{% endblock %}
+{% block content %}
+<div class="doze-flow flow-auth">
+    <section class="flow-auth-intro" aria-labelledby="auth-title">
+        <p class="eyebrow">{{ 'YOUR FIRST STEP' if signing_up else 'YOUR ROUTINE, WAITING FOR YOU' }}</p>
+        <h1 id="auth-title">{{ 'A plan that starts with you.' if signing_up else 'Welcome back.' }}</h1>
+        <p class="flow-intro">{% if signing_up %}Create an account, then tell Doze a little about your usual sleep and routine. You will review your profile before opening your dashboard.{% else %}Log in to return to your sleep plans, records and check-ins.{% endif %}</p>
+        <div class="flow-auth-note"><span aria-hidden="true">☾</span><p>Personal suggestions.<br>Room for your real life.</p></div>
+    </section>
+    <section class="card flow-auth-card" aria-labelledby="account-form-title">
+        <h2 id="account-form-title">{{ 'Create your account' if signing_up else 'Log in to Doze' }}</h2>
+        <p class="muted">{{ 'Next: a short conversation about your routine.' if signing_up else 'Your account keeps your routine and records together.' }}</p>
+        {% if error %}<div class="notice warning" role="alert"><p>{{ error }}</p></div>{% endif %}
+        <form method="post" action="{{ '/signup' if signing_up else '/login' }}" class="planner-form flow-account-form">
+            {% if next_path %}<input type="hidden" name="next" value="{{ next_path }}">{% endif %}
+            {% if signing_up %}<div class="field"><label for="account-name">What should we call you?</label><input id="account-name" name="name" type="text" value="{{ form_values.get('name', '') }}" autocomplete="given-name" maxlength="80" required></div>{% endif %}
+            <div class="field"><label for="account-email">Email address</label><input id="account-email" name="email" type="email" value="{{ form_values.get('email', '') }}" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="254" required></div>
+            <div class="field"><label for="account-password">Password</label><input id="account-password" name="password" type="password" autocomplete="{{ 'new-password' if signing_up else 'current-password' }}" {% if signing_up %}minlength="12" aria-describedby="password-help"{% endif %} maxlength="128" required>{% if signing_up %}<small id="password-help">Use at least 12 characters. A longer passphrase works well.</small>{% endif %}</div>
+            <button class="button" type="submit">{{ 'Create account' if signing_up else 'Log in' }} <span aria-hidden="true">→</span></button>
+        </form>
+        <p class="flow-account-switch">{% if signing_up %}Already have an account? <a href="/login{% if next_path %}?next={{ next_path|urlencode }}{% endif %}">Log in</a>{% else %}New to Doze? <a href="/signup{% if next_path %}?next={{ next_path|urlencode }}{% endif %}">Create an account</a>{% endif %}</p>
+        {% if signing_up %}<p class="flow-fine-print">Your initial profile will use the routine you confirm. Actual sleep history starts when you add completed sleep.</p>{% endif %}
+    </section>
+</div>
+{% endblock %}

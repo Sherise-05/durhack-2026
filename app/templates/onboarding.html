@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set profile_draft = draft|default({}) %}
+{% set missing = missing_fields|default(['name', 'age_band', 'usual_bedtime', 'usual_wake', 'morning_routine_min']) %}
+{% set collected = [0, 5 - (missing|length)]|max %}
+{% block title %}Let’s get to know your routine | Doze{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', path='/css/onboarding.css') }}?v=1">{% endblock %}
+{% block content %}
+<div class="doze-flow flow-onboarding" data-onboarding>
+    <header class="welcome flow-chat-heading">
+        <p class="eyebrow">MAKE IT YOURS</p>
+        <h1>Let’s find your rhythm.</h1>
+        <p>A few short questions about your usual routine. You can review and change everything before your dashboard opens.</p>
+    </header>
+    <div class="flow-setup-steps" aria-label="Account setup progress"><span>Account created <span aria-hidden="true">✓</span></span><strong aria-current="step">Your routine</strong><span>Review profile</span></div>
+    <div class="flow-chat-grid">
+        <section class="card flow-chat-card" aria-labelledby="chat-title">
+            <div class="flow-chat-top"><div><h2 id="chat-title">Meet Doze</h2><p class="muted">Your sleep planning assistant</p></div><span class="flow-assistant-mark" aria-hidden="true">☾</span></div>
+            <p class="flow-processing-note">Gemini processes your answers to help build your profile. Share your routine rather than sensitive medical details. You will confirm the profile before it is used for planning.</p>
+            {% if not provider_available %}<div class="notice warning" role="status"><p>The conversation is currently unavailable. You can still <a href="/onboarding/review">enter your routine yourself</a>.</p></div>{% endif %}
+            <ol class="flow-conversation" id="onboarding-conversation" role="log" aria-label="Conversation with Doze" aria-live="polite" aria-relevant="additions text">
+                {% for message in messages %}<li class="flow-message {{ 'flow-message-user' if message.role == 'user' else 'flow-message-assistant' }}"><span class="flow-speaker">{{ 'You' if message.role == 'user' else 'Doze' }}</span><p>{{ message.content }}</p></li>{% endfor %}
+            </ol>
+            <p class="flow-chat-status" data-chat-status role="status" aria-live="polite"></p>
+            <div class="notice warning" data-chat-error role="alert" {% if not error %}hidden{% endif %}><p data-chat-error-text>{{ error or '' }}</p><a href="/login?next=/onboarding" data-chat-signin hidden>Log in again</a><a href="/onboarding/review">You can also enter your profile yourself.</a></div>
+            <form action="/onboarding/chat" method="post" class="flow-chat-form" data-chat-form>
+                <div class="field"><label for="onboarding-message">Your answer</label><textarea id="onboarding-message" name="message" rows="3" maxlength="2000" required aria-describedby="chat-answer-hint" placeholder="Tell Doze a little about your routine…">{{ pending_message or '' }}</textarea><small id="chat-answer-hint">Answer in your own words. Your progress is saved to your account.</small></div>
+                <div class="action-row"><button class="button" type="submit" data-chat-send>Send answer <span aria-hidden="true">↑</span></button><a class="text-link" href="/onboarding/review" data-chat-review {% if not ready %}hidden{% endif %}>Review my profile <span aria-hidden="true">→</span></a></div>
+            </form>
+        </section>
+        <aside class="card blue-card flow-draft-card" aria-labelledby="draft-title">
+            <p class="eyebrow">TAKING SHAPE</p>
+            <h2 id="draft-title">Your starting profile</h2>
+            <p class="muted" data-progress-text>{{ collected }} of 5 routine details collected</p>
+            <progress class="flow-progress" max="5" value="{{ collected }}" data-profile-progress aria-label="Routine details collected"></progress>
+            <dl class="flow-draft-list" data-profile-draft>
+                {% for key, label in [('name', 'Name'), ('age_band', 'Age band'), ('usual_bedtime', 'Usual bedtime'), ('usual_wake', 'Usual wake-up'), ('morning_routine_min', 'Morning routine')] %}
+                <div><dt>{{ label }}</dt><dd data-draft-field="{{ key }}">{% if profile_draft.get(key) is not none %}{{ profile_draft.get(key) }}{% if key == 'morning_routine_min' %} min{% endif %}{% else %}Not shared yet{% endif %}</dd></div>
+                {% endfor %}
+            </dl>
+            <p class="flow-draft-ready" data-profile-ready {% if not ready %}hidden{% endif %}>Your routine is ready to review. Check the details before we build your starting plan.</p>
+            <p class="flow-fine-print">This is a draft of your usual routine. It does not create any recorded sleep or set an alarm.</p>
+            <a class="text-link" href="/onboarding/review">Prefer to enter the details yourself?</a>
+        </aside>
+    </div>
+    <script type="application/json" id="onboarding-state">{{ {'messages': messages, 'draft': profile_draft, 'ready': ready, 'missing_fields': missing}|tojson }}</script>
+</div>
+{% endblock %}
+{% block extra_scripts %}<script src="{{ url_for('static', path='/js/onboarding.js') }}?v=2" defer></script>{% endblock %}

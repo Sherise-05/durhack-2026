@@ -7,24 +7,60 @@
     <title>{% block title %}Doze{% endblock %}</title>
 
     <link rel="stylesheet"
-          href="{{ url_for('static', path='/css/scripts.css') }}">
+          href="{{ url_for('static', path='/css/scripts.css') }}?v=3">
+    {% block extra_head %}{% endblock %}
 </head>
-<body>
-    <nav class="navbar">
-        <a href="/" class="logo">☾ doze.</a>
-        <div class="nav-links">
-            <a href="/">Dashboard</a>
-            <a href="/calendar">Calendar</a>
-            <a href="/nap-planner">Nap Planner</a>
-            <a href="/sleep-planner">Sleep Planner</a>
-            <a href="/sleep-history">History</a>
+<body{% if not profile_complete %} class="public-view"{% endif %}>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    {% set current_path = request.url.path %}
+    {% set on_plan = current_path.startswith('/nap-planner') or current_path.startswith('/sleep-planner') %}
+    <header class="app-header">
+        <div class="navbar">
+            <a href="{{ '/dashboard' if profile_complete else '/' }}" class="logo" aria-label="Doze"><span aria-hidden="true">☾</span> doze.</a>
+            {% if profile_complete %}
+            <nav class="nav-links" aria-label="Main navigation">
+                <a href="/dashboard" {% if current_path == '/dashboard' %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">⌂</span>Today</a>
+                <a href="/nap-planner" {% if on_plan %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">☾</span>Plan</a>
+                <a href="/calendar" {% if current_path == '/calendar' %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">▦</span>Calendar</a>
+                <a href="/sleep-history" {% if current_path == '/sleep-history' %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">↗</span>History</a>
+            </nav>
+            {% endif %}
+            <div class="account-controls">
+                {% if authenticated %}
+                    {% if profile_complete %}
+                    <a class="profile-link" href="/profile" aria-label="Your profile" {% if current_path == '/profile' %}aria-current="page"{% endif %}>
+                        <span class="avatar" aria-hidden="true">{{ site_profile.name[:1]|upper }}</span><span class="profile-label">Profile</span>
+                    </a>
+                    {% else %}<span class="avatar" aria-label="Signed in as {{ account.name }}">{{ account.name[:1]|upper }}</span>{% endif %}
+                    <form action="/logout" method="post"><button class="logout-button" type="submit">Log out</button></form>
+                {% else %}<a class="button secondary" href="/login">Log in</a>{% endif %}
+            </div>
         </div>
-    </nav>
+    </header>
 
-    <main class="container">
+    <main class="container" id="main-content">
+        {% if profile_complete %}
+        <div class="context-bar">
+            <details class="mode-status">
+                <summary><span class="mode-dot" aria-hidden="true"></span>{{ mode_label }}{% if site_mode.value == 'normal' %} mode{% endif %}<span class="mode-source">{{ 'Automatic' if mode_automatic else 'Your routine' }}</span><span aria-hidden="true">⌄</span></summary>
+                <div class="mode-description">
+                    <p>{{ mode_reason or 'Your plan follows the routine and settings in your profile.' }}</p>
+                    <a href="/profile#mode-information">View mode settings</a>
+                </div>
+            </details>
+            <span class="context-label">Your sleep. Your rhythm.</span>
+        </div>
+        {% if calendar_status.sync_error %}
+        <p class="notice warning" role="status">{{ calendar_status.sync_error }} <a href="/calendar">Review your calendar</a> before relying on its saved schedule.</p>
+        {% elif calendar_status.synced_at %}
+        <p class="sync-note">Calendar last synced {{ calendar_status.synced_at|datetime_label }}. <a href="/calendar">Sync again</a> after schedule changes.</p>
+        {% endif %}
+        {% endif %}
         {% block content %}{% endblock %}
     </main>
 
-    <script src="{{ url_for('static', path='/js/scripts.js') }}"></script>
+    <footer class="site-footer">Sleep smarter. <span>{% if profile_complete %}Times shown in Europe/London · Model estimates, not clinical measurements.{% else %}Your sleep. Your rhythm.{% endif %}</span></footer>
+    <script src="{{ url_for('static', path='/js/scripts.js') }}?v=3" defer></script>
+    {% block extra_scripts %}{% endblock %}
 </body>
 </html>

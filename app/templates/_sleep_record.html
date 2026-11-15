@@ -1,0 +1,11 @@
+<article class="card sleep-record">
+    <div class="record-heading">
+        <div><p class="eyebrow">{{ 'NAP' if record.is_nap else 'NIGHT' }}</p><h3>{{ record.start|datetime_label }} → {{ record.end|datetime_label }}</h3></div>
+        <div><p class="metric-value">{{ record.hours_asleep|duration_h }}</p><p class="muted">Estimated asleep</p></div>
+    </div>
+    <p class="muted">{% if record.rating is not none %}Check-in: {{ record.rating }}/5{% else %}No check-in yet{% endif %}</p>
+    <div class="action-row">
+        <a class="button secondary" href="/sleep-history?edit={{ record.source_id|urlencode }}#log-sleep">{{ 'Edit / check in' if record.rating is none else 'Edit sleep' }}</a>
+        <form method="post" action="/sleep-history/{{ record.source_id|urlencode }}/delete"><button type="submit" class="button quiet">Delete record</button></form>
+    </div>
+</article>

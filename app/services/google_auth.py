@@ -1,139 +1,97 @@
+"""Google Calendar read-only OAuth helpers.
+
+Credentials stay in server-side storage; callers only put a random reference
+in the browser session. Configuration is read at call time so an unconfigured
+Google account never prevents the local application from starting.
+"""
+
+from __future__ import annotations
 
 import os
-from dotenv import load_dotenv
-from google_auth_oauthlib.flow import Flow
-
+from functools import partial
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request as GoogleRequest
-from googleapiclient.discovery import build
+
+SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
 
-load_dotenv()
-
-# Google OAuth configuration
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_AUTH_URI = os.getenv(
-    "GOOGLE_AUTH_URI",
-    "https://accounts.google.com/o/oauth2/auth"
-)
-GOOGLE_TOKEN_URI = os.getenv(
-    "GOOGLE_TOKEN_URI",
-    "https://oauth2.googleapis.com/token"
-)
-GOOGLE_AUTH_PROVIDER_CERT_URL = os.getenv(
-    "GOOGLE_AUTH_PROVIDER_CERT_URL",
-    "https://www.googleapis.com/oauth2/v1/certs"
-)
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
-
-SCOPES = [
-    "https://www.googleapis.com/auth/calendar.readonly"
-]
+class GoogleConfigurationError(ValueError):
+    """The local app does not yet have Google OAuth client settings."""
 
 
-# OAuth configuration
-def get_google_oauth_config():
+@dataclass
+class CalendarFetchResult:
+    events: list[dict]
+    credentials_json: str
+
+
+def get_google_oauth_config() -> dict:
+    required = ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI")
+    if any(not os.getenv(key, "").strip() for key in required):
+        raise GoogleConfigurationError(
+            "Google Calendar is not configured. Set GOOGLE_CLIENT_ID, "
+            "GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI in .env."
+        )
     return {
-        "client_id": GOOGLE_CLIENT_ID,
-        "client_secret": GOOGLE_CLIENT_SECRET,
-        "auth_uri": GOOGLE_AUTH_URI,
-        "token_uri": GOOGLE_TOKEN_URI,
-        "auth_provider_x509_cert_url": GOOGLE_AUTH_PROVIDER_CERT_URL,
-        "redirect_uris": [GOOGLE_REDIRECT_URI],
+        "client_id": os.environ["GOOGLE_CLIENT_ID"],
+        "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "redirect_uris": [os.environ["GOOGLE_REDIRECT_URI"]],
     }
 
 
-# Create Google login flow
-def create_flow():
+def create_flow(*, state: str | None = None, code_verifier: str | None = None):
+    from google_auth_oauthlib.flow import Flow
+
+    config = get_google_oauth_config()
     return Flow.from_client_config(
-        {"web": get_google_oauth_config()},
+        {"web": config},
         scopes=SCOPES,
-        redirect_uri=GOOGLE_REDIRECT_URI
+        redirect_uri=config["redirect_uris"][0],
+        state=state,
+        code_verifier=code_verifier,
+        autogenerate_code_verifier=False,
     )
 
 
-# Fetch actual Google Calendar events
-def fetch_calendar_events(credentials_data):
-    credentials = Credentials.from_authorized_user_info(
-        credentials_data,
-        scopes=SCOPES
-    )
+def fetch_calendar_events(credentials_data: dict, *, now: datetime | None = None) -> CalendarFetchResult:
+    """Fetch a complete bounded snapshot and return any refreshed credentials.
 
-    service = build(
-        "calendar",
-        "v3",
-        credentials=credentials,
-        cache_discovery=False
-    )
+    Include a month ahead so the brain can see an exam within two weeks.
+    Pagination is completed before callers replace their last saved snapshot.
+    """
+    import httplib2
+    from google.auth.transport.requests import Request as GoogleRequest
+    from google.oauth2.credentials import Credentials
+    from google_auth_httplib2 import AuthorizedHttp
+    from googleapiclient.discovery import build
 
-    now = datetime.now(timezone.utc).isoformat()
-
-    result = service.events().list(
-        calendarId="primary",
-        timeMin=now,
-        maxResults=50,
-        singleEvents=True,
-        orderBy="startTime"
-    ).execute()
-
-    events = []
-
-    for event in result.get("items", []):
-        events.append({
-            "title": event.get("summary", "Untitled"),
-            "start": event["start"].get(
-                "dateTime", event["start"].get("date")
-            ),
-            "end": event["end"].get(
-                "dateTime", event["end"].get("date")
-            )
-        })
-
-    return events
-
-
-def fetch_calendar_events(credentials_data):
-    credentials = Credentials.from_authorized_user_info(
-        credentials_data,
-        scopes=SCOPES
-    )
-
+    credentials = Credentials.from_authorized_user_info(credentials_data, scopes=SCOPES)
     if credentials.expired and credentials.refresh_token:
-        credentials.refresh(GoogleRequest())
+        credentials.refresh(partial(GoogleRequest(), timeout=15))
 
-    service = build(
-        "calendar",
-        "v3",
-        credentials=credentials,
-        cache_discovery=False
-    )
-
-    now = datetime.now(timezone.utc)
-
-    # Previous 7 days and next 7 days
-    start = now - timedelta(days=7)
-    end = now + timedelta(days=7)
-
-    events = []
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        raise ValueError("calendar sync requires an aware calculation time")
+    current = current.astimezone(timezone.utc)
+    transport = AuthorizedHttp(credentials, http=httplib2.Http(timeout=15))
+    service = build("calendar", "v3", http=transport, cache_discovery=False)
+    events: list[dict] = []
     page_token = None
-
     while True:
         result = service.events().list(
             calendarId="primary",
-            timeMin=start.isoformat(),
-            timeMax=end.isoformat(),
+            timeMin=(current - timedelta(days=7)).isoformat(),
+            timeMax=(current + timedelta(days=30)).isoformat(),
             singleEvents=True,
             orderBy="startTime",
             maxResults=250,
-            pageToken=page_token
+            pageToken=page_token,
         ).execute()
-
         events.extend(result.get("items", []))
-
         page_token = result.get("nextPageToken")
         if not page_token:
             break
-
-    return events
+    return CalendarFetchResult(events, credentials.to_json())
