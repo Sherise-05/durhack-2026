@@ -52,3 +52,19 @@ def test_demo_never_changes_the_real_account(client):
         assert [r["source_id"] for r in db.list_sleep_records()] == ["mine"]
     assert db.find_account_by_email(demo_modes.demo_email("travel"))["name"]
     assert client.post("/demo/nonsense").status_code == 404
+
+
+@pytest.mark.parametrize("mode", ["normal", "exam", "holiday", "travel"])
+def test_demo_students_have_a_filled_in_journal(client, mode):
+    client.post(f"/demo/{mode}")
+    client.post(f"/demo/{mode}")  # reloading doesn't duplicate entries
+    page = client.get("/dream-journal")
+    assert page.status_code == 200
+    ctx = page.context
+    assert len(ctx["dreams"]) >= 1 and len(ctx["days"]) == 1
+    assert any(d["night"] for d in ctx["dreams"])  # linked to a logged night
+    if mode in ("exam", "travel"):
+        dump = ctx["dumps"][0]["details"]
+        assert len(ctx["dumps"]) == 1 and dump["plan"]["scheduled"] and dump["worries"]
+    else:
+        assert ctx["dumps"] == []

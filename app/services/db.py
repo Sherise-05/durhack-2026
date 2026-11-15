@@ -570,19 +570,29 @@ def _ensure_dream_columns(conn):
             conn.execute(f"ALTER TABLE dreams ADD COLUMN {column} {definition}")
 
 
-def save_dream(user_id, title, content, details: dict | None = None, kind: str = "dream"):
-    """Save a journal entry: "dream" (a night's dream), "day" (a day entry) or "dump" (bedtime brain dump)."""
+def save_dream(user_id, title, content, details: dict | None = None, kind: str = "dream",
+               created_at: datetime | None = None):
+    """Save a journal entry: "dream" (a night's dream), "day" (a day entry) or "dump" (bedtime brain dump).
+
+    ``created_at`` (an aware datetime) backdates demo entries; real entries use the database clock.
+    """
     if kind not in ("dream", "day", "dump"):
         raise ValueError("kind must be 'dream', 'day' or 'dump'")
+    stamp = created_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if created_at else None
     with get_connection() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO dreams (user_id, title, content, details, kind)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO dreams (user_id, title, content, details, kind, created_at)
+            VALUES (?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
             """,
-            (user_id, title, content, json.dumps(details) if details is not None else None, kind)
+            (user_id, title, content, json.dumps(details) if details is not None else None, kind, stamp)
         )
         return cursor.lastrowid
+
+
+def delete_all_dreams(user_id) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM dreams WHERE user_id = ?", (user_id,))
 
 
 def delete_dream(user_id, dream_id) -> bool:

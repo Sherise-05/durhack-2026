@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import secrets
 
-from app.services import accounts, db, personas
+from app.services import accounts, db, demo_journal, personas
 from app.time_utils import instant
 
 DEMOS = {
@@ -59,4 +59,5 @@ def load_demo(mode: str, now: datetime) -> dict:
             db.save_profile(data.profile)
         else:
             db.complete_onboarding(account["id"], data.profile)
+        demo_journal.seed(account["id"], DEMOS[mode]["persona"], db.load_user_data(), now)
     return db.get_account(account["id"])
