@@ -123,6 +123,7 @@ class SleepSession(_Span):
     """
 
     is_nap: bool = False
+    episode_id: str | None = Field(None, description="stable ID linking fragments of the same primary sleep episode")
     efficiency: float = Field(0.9, ge=0, le=1, description="time asleep / time in bed")
     latency_min: float | None = Field(None, ge=0, description="minutes to fall asleep")
     hrv_ms: float | None = Field(None, gt=0, description="overnight HRV (RMSSD)")
@@ -175,6 +176,8 @@ class TravelPlan(BaseModel):
     departure: datetime  # home local time
     arrival: datetime  # destination local time
     planned_from: date | None = None  # None preserves legacy/demo full preparation
+    travel_min: int = Field(0, ge=0, description="ground travel to the departure location")
+    pre_departure_buffer_min: int = Field(0, ge=0, description="additional check-in/security time before departure")
 
     @field_validator("home_tz", "destination_tz")
     @classmethod
@@ -327,6 +330,8 @@ class NapRecommendation(_ClockOutput):
 
 class BedtimeRecommendation(_ClockOutput):
     feasible: bool = True
+    in_progress: bool = False
+    remaining_sleep_h: float | None = None  # expected sleep from now; sleep_h is total for this night
     wind_down: datetime
     bedtime: datetime  # lights out
     alarm: datetime

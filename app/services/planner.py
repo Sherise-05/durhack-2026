@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 
-from app.time_utils import add_elapsed, instant
+from app.time_utils import add_elapsed, instant, local_datetime, resolve_local_clock
 
 from app.schemas import (
     AgeBand,
@@ -33,6 +33,7 @@ from app.schemas import (
     WhatIf,
 )
 from app.services import learning
+from app.services.sleep_history import primary_nights
 from app.services.modes import (
     EXAM_LATEST_BEDTIME,
     MODES,
@@ -72,7 +73,8 @@ def night_of(now: datetime) -> date:
 
 
 def _floor5(dt: datetime) -> datetime:
-    return dt.replace(minute=dt.minute - dt.minute % 5, second=0, microsecond=0)
+    dt = resolve_local_clock(dt)
+    return resolve_local_clock(dt.replace(minute=dt.minute - dt.minute % 5, second=0, microsecond=0))
 
 
 def _ceil5(dt: datetime) -> datetime:
@@ -81,11 +83,13 @@ def _ceil5(dt: datetime) -> datetime:
 
 
 def first_commitment(
-    events: list[CalendarEvent], morning: date, profile: UserProfile | None = None
+    events: list[CalendarEvent], morning: date, profile: UserProfile | None = None,
+    now: datetime | None = None,
 ) -> CalendarEvent | None:
     todays = [
         e for e in events
         if e.start.date() == morning and e.category != EventCategory.REST
+        and (now is None or instant(e.end) > instant(now))
     ]
     return min(
         todays,
@@ -97,6 +101,24 @@ def caffeine_cutoffs(bedtime: datetime) -> dict[str, datetime]:
     return {drink: add_elapsed(bedtime, -timedelta(hours=h)) for drink, h in CAFFEINE_CUTOFF_H.items()}
 
 
+def _daylight_advice(data: UserData) -> str:
+    if data.profile.travel is not None:
+        return "Light timing around travel depends on your body clock; use personalised light guidance."
+    return "Get daylight soon after waking to shift it earlier."
+
+
+def _ongoing_primary(data: UserData, now: datetime):
+    active = next((s for s in data.sessions if not s.is_nap and instant(s.start) <= instant(now) < instant(s.end)), None)
+    if active is None:
+        return None, None
+    episode = next(
+        n for n in primary_nights(data.sessions)
+        if instant(n.start) <= instant(active.start) and instant(n.end) >= instant(active.end)
+        and n.episode_id == active.episode_id
+    )
+    return episode, active
+
+
 # --------------------------------------------------------------------------- dashboard
 
 
@@ -106,6 +128,11 @@ def snapshot(data: UserData, now: datetime, model: PersonModel | None = None) ->
     last = model.last_night
     hrv_z, hrv_pct = model.hrv if model.hrv else (None, None)
     tips = list(MODES[mode].tips)
+    if data.profile.travel is not None:
+        tips = [
+            _daylight_advice(data) if "morning light moves your body clock earlier" in tip else tip
+            for tip in tips
+        ]
     if data.profile.age_band == AgeBand.TEEN:
         adult_tip = MODES[Mode.NORMAL].tips[0]
         teen_tip = "Aim for 8-10 hours of sleep each day (AASM guidance for teenagers)."
@@ -139,8 +166,15 @@ def day_curve(data: UserData, now: datetime, model: PersonModel | None = None) -
         default=model.origin.at,
         key=instant,
     )
-    extra = [SleepBlock(night.bedtime, night.alarm, model.efficiency)] if night.feasible else []
-    end = max(now + timedelta(hours=1), night.bedtime + timedelta(hours=1))
+    _, active = _ongoing_primary(data, now) if night.in_progress else (None, None)
+    planned_start = now if night.in_progress else night.bedtime
+    efficiency = active.efficiency if active is not None else model.efficiency
+    extra = [SleepBlock(planned_start, night.alarm, efficiency)] if night.feasible else []
+    end = max(
+        add_elapsed(now, timedelta(hours=1)),
+        add_elapsed(night.alarm if night.in_progress else night.bedtime, timedelta(hours=1)),
+        key=instant,
+    )
     return model.curve(woke, end, extra=extra)
 
 
@@ -154,8 +188,9 @@ def recommend_bedtime(
     p = data.profile
     mode, _ = effective_mode(data, now)
     settings = MODES[mode]
-    night = night_of(now)
-    morning = night + timedelta(days=1)
+    ongoing, active = _ongoing_primary(data, now)
+    morning = ongoing.end.date() if ongoing is not None else night_of(now) + timedelta(days=1)
+    night = morning - timedelta(days=1)
     reasons: list[str] = []
     warnings: list[str] = []
     minimum, _ = learning.need_range_h(p)
@@ -172,14 +207,29 @@ def recommend_bedtime(
     )
     plan_night = next((d for d in plan.days if d.day == night), None) if plan else None
     if plan_night is not None:
-        usual_alarm = datetime.combine(morning, plan_night.wake)
+        usual_alarm = resolve_local_clock(datetime.combine(morning, plan_night.wake))
         label = "jet-lag plan" if plan.kind == "jet_lag" else "back-to-term plan"
-        reasons.append(f"Tonight follows your {label}: alarm {plan_night.wake:%H:%M}. {plan_night.note}")
+        reasons.append(f"Tonight follows your {label}: alarm {usual_alarm:%H:%M}. {plan_night.note}")
     elif mode == Mode.EXAM:
-        usual_alarm = datetime.combine(morning, exam_wake_time(data, now))
+        usual_alarm = resolve_local_clock(datetime.combine(morning, exam_wake_time(data, now)))
     else:
-        usual_alarm = datetime.combine(morning, p.usual_wake) + timedelta(hours=settings.lie_in_h)
-    event = first_commitment(data.events, morning, p)
+        usual_alarm = resolve_local_clock(datetime.combine(morning, p.usual_wake) + timedelta(hours=settings.lie_in_h))
+    if ongoing is not None:
+        usual_alarm = min(usual_alarm, ongoing.end, key=instant)
+    trip_event = None
+    travel = p.travel
+    commitments = list(data.events)
+    if travel is not None:
+        departure = local_datetime(instant(travel.departure, travel.home_tz))
+        arrival = local_datetime(instant(travel.arrival, travel.destination_tz))
+        if departure.date() == morning and instant(arrival) > instant(now):
+            trip_event = CalendarEvent(
+                title="Flight departure", category=EventCategory.TRAVEL,
+                start=departure, end=arrival,
+                travel_min=travel.travel_min + travel.pre_departure_buffer_min,
+            )
+            commitments.append(trip_event)
+    event = first_commitment(commitments, morning, p, now)
     alarm = usual_alarm
     if event is not None:
         lead = lead_min(p, event)
@@ -207,6 +257,47 @@ def recommend_bedtime(
             f"{p.usual_wake:%H:%M}. A steady wake time matters more than lie-ins."
         )
     alarm = _floor5(alarm)
+    if trip_event is not None and event is trip_event and travel is not None:
+        reasons.append(
+            f"The flight deadline includes {travel.travel_min} min ground travel and "
+            f"{travel.pre_departure_buffer_min} min airport/check-in buffer, plus your morning routine."
+        )
+        if travel.travel_min == 0 or travel.pre_departure_buffer_min == 0:
+            warnings.append("Add your ground-travel time and airport/check-in buffer to the trip; a zero value does not reserve that time.")
+
+    if ongoing is not None and active is not None:
+        observed_h = sum(
+            hours_between(s.start, min(s.end, now, key=instant)) * s.efficiency
+            for s in data.sessions
+            if not s.is_nap
+            and s.episode_id == ongoing.episode_id
+            and instant(ongoing.start) <= instant(s.start) < instant(now)
+            and instant(s.end) <= instant(ongoing.end)
+        )
+        remaining_h = max(0.0, hours_between(now, alarm) * active.efficiency)
+        sleep_h = observed_h + remaining_h
+        feasible = instant(alarm) > instant(now)
+        reasons.append(
+            f"Sleep is already in progress: about {fmt_h(observed_h)} asleep so far, "
+            f"with {fmt_h(remaining_h)} remaining before the {alarm:%H:%M} alarm."
+        )
+        if not feasible:
+            warnings.append(f"The required {alarm:%H:%M} wake deadline has already passed; check the commitment and travel time.")
+        if sleep_h < minimum - 0.05:
+            warnings.append(
+                f"The full night, including sleep already recorded, allows about {fmt_h(sleep_h)} asleep, "
+                f"under the {minimum:g} h minimum."
+            )
+        cycles = sleep_h * 60 / CYCLE_MIN
+        return BedtimeRecommendation(
+            in_progress=True, remaining_sleep_h=round(remaining_h, 2),
+            wind_down=ongoing.start, bedtime=ongoing.start, alarm=alarm,
+            sleep_h=round(sleep_h, 2), need_h=round(need, 2), debt_h=model.debt_h,
+            cycles=round(cycles, 1), first_event=event.title if event else None,
+            feasible=feasible,
+            headline=f"Sleep in progress, alarm {alarm:%H:%M}" if feasible else "Wake deadline already passed",
+            reasons=reasons, warnings=warnings,
+        )
 
     # 2. How much sleep tonight
     bedtime = _floor5(add_elapsed(alarm, -timedelta(hours=in_bed_h)))
@@ -228,7 +319,7 @@ def recommend_bedtime(
     # 3. Body clock: there's no point planning lights-out hours before you can fall
     # asleep, so debt repayment gives way to it, but never below the minimum (§1, §4).
     mid = model.phys.mid_sleep_h
-    natural = datetime.combine(night, time(12)) + timedelta(hours=(mid - 12) % 24 - (need / model.efficiency) / 2)
+    natural = resolve_local_clock(datetime.combine(night, time(12)) + timedelta(hours=(mid - 12) % 24 - (need / model.efficiency) / 2))
     body_clock_earliest = _floor5(natural - timedelta(hours=BODY_CLOCK_SLACK_H))
     latest_for_minimum = _floor5(add_elapsed(alarm, -timedelta(hours=minimum / model.efficiency)))
     if instant(bedtime) < instant(body_clock_earliest):
@@ -240,12 +331,12 @@ def recommend_bedtime(
     if instant(bedtime) < instant(body_clock_earliest):
         warnings.append(
             f"Your body clock may not feel sleepy until about {body_clock_earliest:%H:%M}. "
-            "Get daylight soon after waking to shift it earlier."
+            + _daylight_advice(data)
         )
 
     # 4. Rules and reality checks
     if settings.latest_bedtime is not None:
-        bedtime = min(bedtime, datetime.combine(morning, settings.latest_bedtime), key=instant)
+        bedtime = min(bedtime, resolve_local_clock(datetime.combine(morning, settings.latest_bedtime)), key=instant)
     earliest = _ceil5(add_elapsed(now, timedelta(minutes=10)))
     if instant(bedtime) < instant(earliest):
         bedtime = earliest
@@ -286,8 +377,8 @@ def recommend_bedtime(
             )
         if e.category == EventCategory.SOCIAL and e.start.date() == night and e.end >= evening:
             reasons.append(
-                f"If there are drinks at {e.title}: alcohol helps you drop off but makes the second "
-                "half of the night lighter."
+                f"If there are drinks at {e.title}: alcohol can disrupt sleep even if it makes you feel sleepy; "
+                "effects vary with dose."
             )
     woke = model.state.woke_at
     if woke is not None and hours_between(woke, bedtime) > LONG_DAY_H:

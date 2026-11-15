@@ -12,7 +12,7 @@ Pydantic model. Use `.model_dump(mode="json")` to hand it to a template or Chart
 | Sleep planner | `planner.recommend_bedtime(data, now)` and `planner.what_if_bedtime(data, now, bedtime, alarm)` |
 | Calendar | `nap_recc.best_nap_slot(data, now)` |
 | Sleep history | `sleep_model.nightly_stats(data.sessions, need_h, now)` and `learning.personalise(data, now)` |
-| Modes | `modes.effective_mode(data, now)`, `modes.jet_lag_plan(data, today)` and `modes.back_to_term_plan(data, now)` |
+| Modes | `modes.effective_mode(data, now)`, `modes.jet_lag_plan(data, now.date(), now=now)` and `modes.back_to_term_plan(data, now)` |
 
 - **Demo data:** `personas.load_persona("maya")` (also `leo`, `priya`, `june`). Dates are relative to today, so pass a fake `now` to demo the 2 p.m. nap at any hour.
 - **Several calls in one request:** build `sleep_model.PersonModel(data, now)` once and pass it as `model=`.
@@ -32,3 +32,5 @@ See [the feature/science guide](docs/SCIENCE_AND_FEATURES.md) for plain-language
 Use the existing environment: `venv/bin/python -m pytest -q`.
 
 QA repairs: `BedtimeRecommendation.feasible` explicitly marks impossible sleep windows; dashboard curves still render. Hypothetical sleep replaces future recorded sleep while preserving past observations. Precise destination light windows are withheld until phase-aware timing is implemented. See [the QA repair record](docs/QA_REVIEW.md).
+
+Follow-up QA repairs add primary sleep `episode_id` grouping, trip `travel_min` / `pre_departure_buffer_min` fields and bedtime `in_progress` / `remaining_sleep_h` outputs. See [the backend handoff](docs/BACKEND_HANDOFF.md) for required storage, proposed endpoints and integration checks, and [the follow-up repair record](docs/FOLLOWUP_QA_REVIEW.md) for the verified cases.

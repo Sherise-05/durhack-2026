@@ -28,6 +28,16 @@ def local_datetime(value: datetime, zone: str | tzinfo = LOCAL_ZONE) -> datetime
     return local
 
 
+def resolve_local_clock(value: datetime, zone: str | tzinfo = LOCAL_ZONE) -> datetime:
+    """Resolve a generated schedule clock, shifting a DST gap forward.
+
+    Unlike ingestion validation, a recurring generated clock needs a defined
+    result on spring-change days. Preserve valid folds and move nonexistent
+    clocks forward by the gap before constructing labels or output fields.
+    """
+    return instant(value, zone).astimezone(_zone(zone)).replace(tzinfo=None)
+
+
 def hours_between(a: datetime, b: datetime, zone: str | tzinfo = LOCAL_ZONE) -> float:
     return (instant(b, zone) - instant(a, zone)).total_seconds() / 3600
 

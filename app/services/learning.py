@@ -30,7 +30,8 @@ from dataclasses import dataclass
 from datetime import datetime, time
 
 from app.schemas import AgeBand, Belief, Chronotype, SleepSession, UserData, UserProfile, normalise_sessions
-from app.time_utils import instant
+from app.services.sleep_history import primary_nights
+from app.time_utils import add_elapsed, instant, local_datetime
 
 # --------------------------------------------------------------------------- age bands
 
@@ -109,7 +110,7 @@ def sleep_need_belief(profile: UserProfile, sessions: list[SleepSession]) -> Bel
     steps = round((hi - lo) / NEED_STEP_H)
     grid = [round(lo + NEED_STEP_H * i, 2) for i in range(steps + 1)]
     prior = prior_need_h(profile)
-    nights = [s for s in normalise_sessions(sessions) if not s.is_nap and s.rating in (1, 2, 4, 5) and s.hours_asleep >= 3]
+    nights = [s for s in primary_nights(sessions) if s.rating in (1, 2, 4, 5) and s.hours_asleep >= 3]
     log_post = []
     for need in grid:
         lp = -0.5 * ((need - prior) / NEED_PRIOR_SD_H) ** 2
@@ -132,10 +133,13 @@ Z_10 = 1.2816  # 10th / 90th percentile of a normal
 def since_noon_h(value: datetime | time) -> float:
     """Clock time as hours after noon (00:00 -> 12, 03:30 -> 15.5), so a night's
     times don't wrap around midnight when we average them."""
-    return (value.hour + value.minute / 60 - 12) % 24
+    return (value.hour + value.minute / 60 + value.second / 3600 + value.microsecond / 3_600_000_000 - 12) % 24
 
 
 def mid_sleep_since_noon(start: datetime | time, end: datetime | time) -> float:
+    if isinstance(start, datetime) and isinstance(end, datetime):
+        midpoint = add_elapsed(start, (instant(end) - instant(start)) / 2)
+        return since_noon_h(local_datetime(midpoint))
     a, b = since_noon_h(start), since_noon_h(end)
     if b <= a:
         b += 24
@@ -157,10 +161,7 @@ def body_clock_belief(profile: UserProfile, sessions: list[SleepSession], now: d
     if profile.chronotype == Chronotype.NEUTRAL:  # "not sure": use the age-band average instead
         offset = AGE_BANDS[profile.age_band].clock_offset_h
     prior = usual_mid_since_noon(profile) + offset
-    nights = sorted(
-        (s for s in normalise_sessions(sessions) if not s.is_nap and instant(s.end) <= instant(now)),
-        key=lambda s: instant(s.end),
-    )
+    nights = primary_nights(sessions, now)
     obs = [unwrap_hours(mid_sleep_since_noon(s.start, s.end), prior) for s in nights[-CLOCK_NIGHTS:]]
     precision = 1 / CLOCK_PRIOR_SD_H**2 + len(obs) / CLOCK_NIGHT_SD_H**2
     mean = (prior / CLOCK_PRIOR_SD_H**2 + sum(obs) / CLOCK_NIGHT_SD_H**2) / precision
@@ -226,7 +227,7 @@ LATENCY_PRIOR_WEIGHT = 5  # your setting counts as 5 nights of evidence
 
 
 def latency_min(profile: UserProfile, sessions: list[SleepSession]) -> float:
-    obs = [s.latency_min for s in normalise_sessions(sessions) if s.latency_min is not None and not s.is_nap]
+    obs = [s.latency_min for s in primary_nights(sessions) if s.latency_min is not None]
     total = LATENCY_PRIOR_WEIGHT * profile.sleep_latency_min + sum(obs)
     return round(total / (LATENCY_PRIOR_WEIGHT + len(obs)), 1)
 
@@ -248,10 +249,11 @@ class Personal:
 
 
 def personalise(data: UserData, now: datetime) -> Personal:
-    past = [s for s in data.sessions if instant(s.end) <= instant(now)]
+    completed = primary_nights(data.sessions, now)
+    past_naps = [s for s in data.sessions if s.is_nap and instant(s.end) <= instant(now)]
     return Personal(
-        need=sleep_need_belief(data.profile, past),
-        body_clock=body_clock_belief(data.profile, past, now),
-        inertia=inertia_belief(past),
-        latency_min=latency_min(data.profile, past),
+        need=sleep_need_belief(data.profile, completed),
+        body_clock=body_clock_belief(data.profile, completed, now),
+        inertia=inertia_belief(past_naps),
+        latency_min=latency_min(data.profile, completed),
     )

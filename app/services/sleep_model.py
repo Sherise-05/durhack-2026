@@ -56,6 +56,7 @@ from app.schemas import (
     normalise_sessions,
 )
 from app.services import learning
+from app.services.sleep_history import primary_nights
 from app.time_utils import add_elapsed, hours_between, instant
 
 # Process S
@@ -116,11 +117,8 @@ def clock_h(t: datetime) -> float:
 
 
 def nights(sessions: list[SleepSession], now: datetime) -> list[SleepSession]:
-    """Night sleeps (not naps) that had ended by ``now``, oldest first."""
-    return sorted(
-        (s for s in normalise_sessions(sessions) if not s.is_nap and instant(s.end) <= instant(now)),
-        key=lambda s: instant(s.end),
-    )
+    """Completed primary-night summaries, oldest first; fragments count once."""
+    return primary_nights(sessions, now)
 
 
 # --------------------------------------------------------------------------- the processes
@@ -406,7 +404,9 @@ def sleep_debt_h(sessions: list[SleepSession], need_h: float, now: datetime) -> 
     2 p.m. to 2 p.m., so a morning nap counts towards the night before it."""
     totals: dict[date, float] = {}
     night_keys = set()
-    for s in normalise_sessions(sessions):
+    primary = nights(sessions, now)
+    naps = [s for s in normalise_sessions(sessions) if s.is_nap and instant(s.end) <= instant(now)]
+    for s in primary + naps:
         if not 0 <= hours_between(s.end, now) < DEBT_NIGHTS * 24:
             continue
         key = (s.end - timedelta(hours=14)).date()

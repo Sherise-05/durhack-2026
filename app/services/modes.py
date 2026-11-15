@@ -32,12 +32,12 @@ from app.schemas import (
 )
 from app.time_utils import instant
 from app.services import learning
+from app.services.sleep_history import primary_nights
 from app.services.sleep_model import (
     JET_LAG_MIN_H,
     PRE_TRIP_H_PER_DAY,
     adjust_rate_h_per_day,
     fmt_h,
-    nights,
     pre_trip_nights,
     pre_trip_shift_h,
     time_zone_shift_h,
@@ -193,21 +193,32 @@ def _place(tz: str) -> str:
     return tz.split("/")[-1].replace("_", " ")
 
 
-def _in_bed_h(data: UserData) -> float:
-    """Default time in bed for plan bedtimes: learned sleep need / your usual efficiency."""
-    need = learning.sleep_need_belief(data.profile, data.sessions).mean
-    effs = [s.efficiency for s in sorted((s for s in data.sessions if not s.is_nap), key=lambda s: s.end)[-7:]]
+def _in_bed_h(data: UserData, now: datetime) -> float:
+    """Time in bed from completed primary nights available at the cutoff.
+
+    Use the same evidence window and efficiency rule as PersonModel. Supplied
+    future records must not change a plan made from today's information.
+    """
+    completed = primary_nights(data.sessions, now=now)
+    need = learning.sleep_need_belief(data.profile, completed).mean
+    effs = [s.efficiency for s in completed[-7:]]
     eff = min(0.98, max(0.75, median(effs))) if effs else 0.9
     return need / eff
 
 
-def jet_lag_plan(data: UserData, today: date, in_bed_h: float | None = None) -> ShiftPlan | None:
+def jet_lag_plan(
+    data: UserData, today: date, in_bed_h: float | None = None, *, now: datetime | None = None,
+) -> ShiftPlan | None:
     """Day-by-day jet-lag plan. ``in_bed_h`` sets bedtimes from wake times (the
-    planner passes tonight's figure; default: learned need / usual efficiency)."""
+    planner passes tonight's figure; default: learned need / usual efficiency).
+    ``now`` is the evidence cutoff. Date-only callers use the start of ``today``;
+    pass ``now`` to include sleeps that have completed later today.
+    """
     p, travel = data.profile, data.profile.travel
     if travel is None:
         return None
-    in_bed = in_bed_h or _in_bed_h(data)
+    cutoff = now if now is not None else datetime.combine(today, time.min)
+    in_bed = in_bed_h if in_bed_h is not None else _in_bed_h(data, cutoff)
     shift = time_zone_shift_h(travel)
     east = shift > 0
     home, away = _place(travel.home_tz), _place(travel.destination_tz)
@@ -279,14 +290,15 @@ def jet_lag_plan(data: UserData, today: date, in_bed_h: float | None = None) -> 
 def back_to_term_plan(data: UserData, now: datetime, in_bed_h: float | None = None) -> ShiftPlan | None:
     """Walk a drifted holiday schedule back to term time, 30 min a day."""
     p = data.profile
-    in_bed = in_bed_h or _in_bed_h(data)
-    recent = nights(data.sessions, now)[-7:]
+    in_bed = in_bed_h if in_bed_h is not None else _in_bed_h(data, now)
+    recent = primary_nights(data.sessions, now=now)[-7:]
     if p.term_starts is None or not recent:
         return None
-    # The output promises changes to the alarm, so measure wake-time drift.
-    # Midpoint drift differs when recent and usual sleep durations differ.
+    # Advance from the latest completed main sleep, including a followed step.
+    # A multi-night median lags actual progress and repeats the previous alarm.
+    # Missing new records do not count as proof that a planned step was followed.
     reference = learning.since_noon_h(p.usual_wake)
-    current = median(learning.unwrap_hours(learning.since_noon_h(s.end), reference) for s in recent)
+    current = learning.unwrap_hours(learning.since_noon_h(recent[-1].end), reference)
     late = round(current - reference, 2)
     if late <= 0.25:
         return ShiftPlan(

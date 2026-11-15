@@ -233,8 +233,8 @@ def _plan(
         reasons.append(f"You said you're {tiredness.value.replace('_', ' ')}.")
     if tiredness == Tiredness.FINE and model.debt_h >= 3:
         reasons.append(
-            f"You feel fine, but you're carrying {fmt_h(model.debt_h)} of sleep debt. After a week of "
-            "short nights people stop noticing how tired they are (Van Dongen et al. 2003)."
+            f"You feel fine, but you're carrying {fmt_h(model.debt_h)} of sleep debt. With repeated short nights, "
+            "people can underestimate their growing performance impairment (Van Dongen et al. 2003)."
         )
     dip = (model.phys.mid_sleep_h + AFTERNOON_DIP_H - 0.5) % 24
     if abs(clock_h(lie_down) - dip) <= 1.25:
