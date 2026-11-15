@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app import web
 from app.services import db
 from app.services.calendar_ingest import CalendarImportError, import_google_events
+from app.services.demo_calendar import demo_snapshot
 from app.services.google_auth import GoogleConfigurationError, create_flow, fetch_calendar_events
 from app.web import templates
 from app.time_utils import instant
@@ -168,6 +169,24 @@ def disconnect_calendar(request: Request):
     return RedirectResponse("/calendar", status_code=303)
 
 
+@router.post("/calendar/demo")
+def load_demo_calendar():
+    """Replace this account's saved events with a fake calendar dated from today."""
+    events, display = demo_snapshot(web.local_now())
+    db.replace_calendar_events(events, metadata={
+        "synced_at": datetime.now(timezone.utc).isoformat(),
+        "display_events": display, "sync_error": None, "demo": True,
+    })
+    return RedirectResponse("/calendar", status_code=303)
+
+
+@router.post("/calendar/demo/clear")
+def clear_demo_calendar():
+    if db.load_calendar_metadata().get("demo"):
+        db.replace_calendar_events([], metadata={})
+    return RedirectResponse("/calendar", status_code=303)
+
+
 @router.get("/calendar", response_class=HTMLResponse)
 def calendar(request: Request):
     reference = request.session.get("google_connection_ref")
@@ -192,5 +211,6 @@ def calendar(request: Request):
             "connected": connected,
             "synced_at": metadata.get("synced_at"),
             "sync_error": metadata.get("sync_error"),
+            "demo": bool(metadata.get("demo")),
         },
     )

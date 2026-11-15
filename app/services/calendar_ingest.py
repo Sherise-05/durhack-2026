@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import re
 from zoneinfo import ZoneInfo
 
 from app.schemas import CalendarEvent, EventCategory
@@ -11,6 +12,31 @@ from app.time_utils import instant, local_datetime
 
 class CalendarImportError(ValueError):
     pass
+
+
+# First match wins, so exams beat "driving test" -> travel and study beats work.
+_CATEGORY_KEYWORDS: list[tuple[EventCategory, tuple[str, ...]]] = [
+    (EventCategory.EXAM, ("exam", "exams", "midterm", "finals", "quiz", "test", "viva")),
+    (EventCategory.TRAVEL, ("drive", "driving", "flight", "train", "travel", "commute", "airport")),
+    (EventCategory.LECTURE, ("lecture", "seminar", "tutorial", "lab", "class", "workshop")),
+    (EventCategory.STUDY, ("study", "revision", "revise", "coursework", "deadline", "library", "homework", "assignment")),
+    (EventCategory.EXERCISE, ("gym", "run", "running", "football", "swim", "swimming", "training", "yoga", "workout", "sport", "match")),
+    (EventCategory.WORK, ("work", "shift", "job", "internship")),
+    (EventCategory.SOCIAL, ("lunch", "dinner", "party", "movie", "drinks", "friends", "society", "social", "pub", "night out")),
+    (EventCategory.REST, ("nap", "rest", "sleep")),
+]
+
+
+def categorise(title: str) -> EventCategory:
+    """Guess a category from the event title so exam mode and buffers can apply.
+
+    Simple whole-word keyword matching; anything unrecognised stays OTHER.
+    """
+    text = title.casefold()
+    for category, words in _CATEGORY_KEYWORDS:
+        if any(re.search(rf"\b{re.escape(word)}\b", text) for word in words):
+            return category
+    return EventCategory.OTHER
 
 
 def _timestamp(value: dict) -> datetime:
@@ -58,7 +84,7 @@ def import_google_events(raw_events: list[dict]) -> tuple[list[CalendarEvent], l
                 continue
             event = CalendarEvent(
                 title=title, start=_timestamp(start), end=_timestamp(end),
-                category=EventCategory.OTHER, location=raw.get("location"),
+                category=categorise(title), location=raw.get("location"),
             )
             declined = any(
                 attendee.get("self") and attendee.get("responseStatus") == "declined"
@@ -71,6 +97,7 @@ def import_google_events(raw_events: list[dict]) -> tuple[list[CalendarEvent], l
             display.append({
                 "id": source_id, "title": event.title, "start": encoded["start"],
                 "end": encoded["end"], "all_day": False, "blocks_sleep": busy,
+                "category": event.category.value,
             })
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise CalendarImportError(
