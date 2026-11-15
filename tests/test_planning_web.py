@@ -32,7 +32,7 @@ def test_dashboard_reads_saved_night_and_preserves_sleep_gaps(client):
     empty = client.get("/api/me/dashboard").json()
     assert empty["has_sleep_history"] is False
     assert empty["snapshot"]["last_night"] is None
-    assert "profile defaults" in client.get("/dashboard").text
+    assert "Starting estimate from your profile" in client.get("/dashboard").text
 
     _short_night()
     saved = client.get("/api/me/dashboard").json()
@@ -183,7 +183,8 @@ def test_nap_reason_uses_gemini_text_when_available(client, monkeypatch):
 def test_today_shows_one_nap_button_not_a_no_nap_message(client):
     _short_night()
     page = client.get("/dashboard").text
-    assert "data-nap-widget" in page and "Tap for a nap" in page
+    assert "data-nap-widget" in page and "Nap now" in page
+    assert "Best nap today" in page or "No nap needed today" in page
     assert "No nap is suggested right now" not in page and "Review nap options" not in page
 
 
@@ -203,3 +204,62 @@ def test_what_if_scenarios_compare_against_dozes_plan_without_saving(client):
     assert "less sleep than Doze's plan" in page.text and "Morning exam" in page.text
     assert db.list_sleep_records() == before
     assert client.post("/sleep-planner/what-if", data={"preset": "nonsense"}).status_code == 422
+
+
+def test_nap_now_starts_immediately_and_is_skipped_in_the_evening(client, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    _short_night()
+    plan = client.post("/api/me/nap-now?start=now").json()
+    assert plan["status"] in ("now", "anyway")
+    assert plan["lie_down"] == "2026-11-16T14:00:00+00:00"  # starts right now
+    assert plan["sleep_min"] in (10, 20, 90)
+    assert client.post("/api/me/nap-now/reason?start=now").json()["reason"]
+    monkeypatch.setattr(web, "local_now", lambda: datetime(2026, 11, 16, 21))
+    evening = client.post("/api/me/nap-now?start=now").json()
+    assert evening["status"] == "blocked"
+
+
+def test_today_shows_tonight_card_sleep_now_and_tips(client, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    _short_night()
+    page = client.get("/dashboard").text
+    assert "night-card" in page and "Wind down" in page and 'id="sleep-now-btn"' in page
+    assert "data-alarm=" in page and "stat-bar" in page
+    tips = client.get("/api/me/sleep-tips").json()
+    assert tips["source"] == "doze" and 1 <= len(tips["tips"]) <= 3
+
+
+def test_today_what_if_chips_compare_a_scenario_without_saving(client):
+    _short_night()
+    exam = CalendarEvent(title="Morning exam", start=datetime(2026, 11, 17, 10),
+                         end=datetime(2026, 11, 17, 12), category=EventCategory.EXAM)
+    db.replace_calendar_events([exam])
+    before = db.list_sleep_records()
+    assert "data-what-if" in client.get("/dashboard").text
+    result = client.post("/api/me/what-if/scenario", json={"preset": "late"})
+    assert result.status_code == 200
+    data = result.json()
+    assert data["label"] == "Late night (2 a.m.)" and data["sleep_delta_h"] < 0
+    row = next(r for r in data["events"] if r["title"] == "Morning exam")
+    assert row["choice"] < row["plan"] and row["late"] is False
+    assert client.post("/api/me/what-if/scenario", json={"preset": "nope"}).status_code == 422
+    assert db.list_sleep_records() == before
+
+
+def test_nap_what_if_chips_simulate_a_nap_at_a_chosen_time(client):
+    _short_night()
+    lecture = CalendarEvent(title="Maths lecture", start=datetime(2026, 11, 16, 17),
+                            end=datetime(2026, 11, 16, 18), category=EventCategory.LECTURE)
+    db.replace_calendar_events([lecture])
+    before = db.list_sleep_records()
+    page = client.get("/dashboard")
+    options = page.context["nap_options"]
+    assert options[0]["key"] == "now" and "data-nap-what-if" in page.text
+    result = client.post("/api/me/nap-what-if", json={"at": "2026-11-16T14:00:00+00:00"}).json()
+    assert result["possible"] and result["sleep_min"] in (10, 20, 90)
+    row = next(r for r in result["events"] if r["title"] == "Maths lecture")
+    assert row["with_nap"] >= row["without_nap"]  # a nap before the lecture doesn't make it worse
+    late = client.post("/api/me/nap-what-if", json={"at": "2026-11-16T21:30:00+00:00"}).json()
+    assert late["possible"] is False  # too close to bedtime
+    assert client.post("/api/me/nap-what-if", json={"at": "2026-11-15T14:00:00+00:00"}).status_code == 422
+    assert db.list_sleep_records() == before

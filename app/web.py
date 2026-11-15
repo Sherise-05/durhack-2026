@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi.templating import Jinja2Templates
 
-from app.time_utils import add_elapsed, local_datetime
+from app.time_utils import add_elapsed, local_datetime, local_isoformat
 
 
 def _display_value(value):
@@ -95,7 +95,8 @@ templates = Jinja2Templates(
     context_processors=[_page_context],
 )
 templates.env.filters.update(clock=clock, clock_ceil=clock_ceil, datetime_label=datetime_label,
-                             date_label=date_label, duration_h=duration_h, nap_reason=nap_reason)
+                             date_label=date_label, duration_h=duration_h, nap_reason=nap_reason,
+                             local_iso=local_isoformat)
 
 
 def local_now() -> datetime:

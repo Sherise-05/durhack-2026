@@ -1,25 +1,22 @@
-{# One-tap nap button. nap.js asks the nap maths for the best time today, then the
-   button turns into a countdown to lie-down and the alarm. Gemini explains the choice. #}
+{# "Nap now": starts a nap timer straight away, with a short reason for its length and alarm. #}
 <div class="nap-widget" data-nap-widget data-state="idle">
     <button class="nap-button" type="button" data-nap-main aria-live="polite">
         <span class="nap-button-icon" aria-hidden="true" data-nap-icon>☾</span>
         <span class="nap-button-text">
-            <small data-nap-eyebrow>Feeling tired?</small>
-            <strong data-nap-title>Tap for a nap</strong>
-            <small data-nap-sub>Doze picks the best time today and sets the alarm</small>
+            <small data-nap-eyebrow>Tired right now?</small>
+            <strong data-nap-title>Nap now</strong>
+            <small data-nap-sub>Doze sets the alarm for you</small>
         </span>
     </button>
     <div class="nap-panel" data-nap-panel hidden>
         <div class="nap-reason">
-            <p class="nap-reason-label" data-nap-reason-label>Why this time</p>
+            <p class="nap-reason-label" data-nap-reason-label>Why this timing</p>
             <p data-nap-reason>Thinking about your day…</p>
         </div>
         <ul class="notice warning" data-nap-warnings hidden></ul>
         <div class="action-row">
-            <button class="button" type="button" data-nap-anyway hidden>Nap anyway</button>
             <button class="button secondary" type="button" data-nap-cancel>Cancel nap</button>
         </div>
-        <p class="muted nap-footnote">Keep this tab open so the alarm can ring. It doesn't record a sleep.</p>
     </div>
     <noscript><p><a href="/nap-planner">Open the nap planner</a> to see a nap recommendation.</p></noscript>
 </div>

@@ -10,6 +10,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const micLabel = form.querySelector("[data-mic-label]");
     const micHint = form.querySelector("[data-mic-hint]");
     const save = form.querySelector("[data-save]");
+    const contentLabel = form.querySelector("[data-content-label]");
+    const kind = () => (form.querySelector("input[name=kind]:checked") || {}).value || "dream";
+    const COPY = {
+        dream: {label: "Your dream", mic: "Tap and tell Doze your dream", placeholder: "I was walking through a city in the clouds, and…", empty: "Tell Doze a little about your dream first."},
+        day: {label: "Your day", mic: "Tap and tell Doze about your day", placeholder: "Today I had my maths lecture, then…", empty: "Tell Doze a little about your day first."},
+    };
+    form.querySelectorAll("input[name=kind]").forEach(radio => radio.addEventListener("change", () => {
+        const copy = COPY[kind()];
+        contentLabel.textContent = copy.label;
+        content.placeholder = copy.placeholder;
+        if (mic.dataset.state !== "listening" && !mic.disabled) micLabel.textContent = copy.mic;
+    }));
 
     // ---- read aloud (browser voice) ----
     function speak(text) {
@@ -35,7 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const setListening = on => {
             listening = on;
             mic.dataset.state = on ? "listening" : "idle";
-            micLabel.textContent = on ? "Listening… tap to stop" : "Tap and tell Doze your dream";
+            micLabel.textContent = on ? "Listening… tap to stop" : COPY[kind()].mic;
             micHint.textContent = on ? "Take your time. Pauses are fine." : "Speak naturally. Your words appear below.";
             if (!on) interim.textContent = "";
         };
@@ -70,15 +82,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // ---- save ----
     form.addEventListener("submit", async event => {
         event.preventDefault();
-        if (!content.value.trim()) { status.textContent = "Tell Doze a little about your dream first."; return; }
+        if (!content.value.trim()) { status.textContent = COPY[kind()].empty; return; }
         save.disabled = true;
-        status.textContent = "Illustrating your dream…";
+        status.textContent = kind() === "day" ? "Illustrating your day…" : "Illustrating your dream…";
         try {
             const response = await fetch("/api/dreams", {
                 method: "POST",
                 headers: {"Content-Type": "application/json", "Accept": "application/json"},
                 credentials: "same-origin",
-                body: JSON.stringify({title: title.value.trim(), content: content.value.trim()}),
+                body: JSON.stringify({title: title.value.trim(), content: content.value.trim(), kind: kind()}),
             });
             if (response.status === 401) { window.location.href = "/login?next=/dream-journal"; return; }
             if (!response.ok) throw new Error("Couldn't save your dream. Try again.");
@@ -93,9 +105,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---- delete ----
     document.querySelectorAll(".delete-entry").forEach(button => button.addEventListener("click", async () => {
-        if (!window.confirm("Delete this dream? This can't be undone.")) return;
+        if (!window.confirm("Delete this entry? This can't be undone.")) return;
         const response = await fetch(`/api/dreams/${encodeURIComponent(button.dataset.dreamId)}`, {method: "DELETE", credentials: "same-origin"});
         if (response.ok) button.closest(".dream-card").remove();
-        else status.textContent = "Couldn't delete that dream.";
+        else status.textContent = "Couldn't delete that entry.";
     }));
 });

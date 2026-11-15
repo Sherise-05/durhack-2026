@@ -1,15 +1,121 @@
 {% extends "base.html" %}
 {% block title %}Today | Doze{% endblock %}
 {% block content %}
-<section class="welcome page-heading">
-    <p class="eyebrow">YOUR DAY, WITH ROOM TO REST</p>
+<section class="today-heading">
     <h1>{{ greeting }}{% if profile.name|lower != 'you' %}, {{ profile.name }}{% endif %}.</h1>
-    <p>{{ snapshot.now.strftime('%A %d %B') }} · {{ snapshot.now|clock }} · Europe/London</p>
+    <p class="muted">{{ snapshot.now.strftime('%A %d %B') }} · {{ snapshot.now|clock }}</p>
 </section>
 
-<div class="today-layout">
+<section class="stat-bar" aria-label="Your sleep at a glance">
+    <div class="stat"><span>Sleep need</span><strong>{{ snapshot.sleep_need_h|duration_h }}</strong></div>
+    <div class="stat"><span>Last night</span><strong>{% if snapshot.last_night %}{{ snapshot.last_night.hours_asleep|duration_h }}{% else %}<a href="#check-in">Not logged</a>{% endif %}</strong></div>
+    <div class="stat"><span>Sleep debt</span><strong>{{ debt_h|duration_h }}</strong></div>
+    <div class="stat"><span>{% if next_event_in_progress %}Now{% else %}Next{% endif %}</span><strong>{% if next_event %}{{ next_event.title }} · {{ next_event.start|clock }}{% else %}Nothing planned{% endif %}</strong></div>
+    <div class="stat"><span>Mode</span><strong>{{ mode_label }}</strong></div>
+</section>
+
+<div class="today-main">
+    <section class="card night-card" aria-labelledby="night-title">
+        <p class="eyebrow">TONIGHT</p>
+        {% if bedtime.feasible %}
+        <h2 id="night-title" class="sr-only">Tonight's plan</h2>
+        <div class="night-times">
+            {% if not bedtime.in_progress %}
+            <div><span>Wind down</span><strong>{{ bedtime.wind_down|clock }}</strong></div>
+            <span class="night-arrow" aria-hidden="true">→</span>
+            <div><span>Sleep</span><strong>{{ bedtime.bedtime|clock }}</strong></div>
+            {% else %}
+            <div><span>Asleep now · wake</span><strong>{{ bedtime.alarm|clock_ceil }}</strong></div>
+            {% endif %}
+        </div>
+        <p class="night-sub">Wake {{ bedtime.alarm|clock_ceil }} · about {{ bedtime.sleep_h|duration_h }} asleep{% if bedtime.first_event %} · before {{ bedtime.first_event }}{% endif %}</p>
+        <div class="sleep-now" data-sleep-now data-alarm="{{ bedtime.alarm|local_iso }}">
+            <button type="button" class="sleep-now-button" id="sleep-now-btn">
+                <span class="sleep-now-icon" aria-hidden="true">☾</span>
+                <span><strong data-sleep-title>Sleep now</strong><small data-sleep-sub>Doze wakes you at {{ bedtime.alarm|clock_ceil }}</small></span>
+            </button>
+            <p id="sleep-demo-status" class="sleep-status" aria-live="polite"></p>
+            <div class="sleep-actions">
+                <button type="button" class="link-light" id="stop-demo-btn" hidden>I'm awake: stop</button>
+                <button type="button" class="link-light" id="demo-wake-btn" hidden>Demo: wake in 10 s</button>
+            </div>
+        </div>
+        {% if not bedtime.in_progress %}
+        <div class="what-if" data-what-if>
+            <div class="what-if-chips" role="group" aria-label="What if I sleep differently tonight?">
+                <span class="what-if-label">What if…</span>
+                {% for key, label in [('later', '1 h later'), ('late', '2 a.m.'), ('lie_in', 'Lie in 1 h'), ('early', 'Early night')] %}
+                <button type="button" class="what-if-chip" data-preset="{{ key }}" aria-pressed="false">{{ label }}</button>
+                {% endfor %}
+            </div>
+            <div class="what-if-result" data-what-if-result aria-live="polite" hidden></div>
+        </div>
+        {% endif %}
+        {% else %}
+        <h2 id="night-title">No sleep window fits tonight</h2>
+        <p class="night-sub">{{ bedtime.reasons[0] if bedtime.reasons else 'Your commitments leave no room for enough sleep.' }}</p>
+        {% endif %}
+        {% if bedtime.warnings %}<ul class="night-warnings">{% for warning in bedtime.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
+    </section>
+
+    <section class="card nap-card" aria-labelledby="nap-title">
+        <p class="eyebrow">NAP</p>
+        {% set s = nap_suggestion %}
+        {% if s.status in ('later', 'now') %}
+        <h2 id="nap-title">Best nap today: {{ s.plan.lie_down|clock }} → {{ s.plan.alarm|clock_ceil }}</h2>
+        <p class="muted">{{ s.plan.sleep_min }}-minute {{ 'full-cycle nap' if s.plan.kind == 'full_cycle' else 'power nap' }}, timed around your day's events.</p>
+        {% else %}
+        <h2 id="nap-title">No nap needed today</h2>
+        <p class="muted">{{ s.plan.headline.split('. If you want one')[0] }}.</p>
+        {% endif %}
+        {% include "_nap_button.html" %}
+        {% if nap_options %}
+        <div class="what-if what-if-light" data-nap-what-if>
+            <div class="what-if-chips" role="group" aria-label="What if I nap at a different time?">
+                <span class="what-if-label">What if I nap…</span>
+                {% for option in nap_options %}
+                <button type="button" class="what-if-chip" data-at="{{ option.at|local_iso }}" aria-pressed="false">{{ option.label }}</button>
+                {% endfor %}
+            </div>
+            <div class="what-if-result" data-what-if-result aria-live="polite" hidden></div>
+        </div>
+        {% endif %}
+    </section>
+</div>
+
+{% if mode_card %}
+<section class="card mode-card mode-{{ mode_card.mode }} section-gap" aria-labelledby="mode-title">
+    <p class="eyebrow">{{ mode_card.label|upper }}</p>
+    <h2 id="mode-title">{{ mode_card.reason }}</h2>
+    {% if mode_card.mode == 'exam' %}
+    <p>Same wake time every day until your exams: <strong>{{ mode_card.fixed_wake.strftime('%H:%M') }}</strong>, early enough for your earliest exam with time to shake off grogginess. Bed before 2 a.m., and no all-nighters.</p>
+    <ul class="mode-list">{% for exam in mode_card.exams %}<li><strong>{{ exam.title }}</strong> · {{ exam.start|datetime_label }}</li>{% endfor %}</ul>
+    {% elif mode_card.plan %}
+    <p>{{ mode_card.plan.summary }}</p>
+    <div class="table-scroll">
+    <table class="compare-table mode-table">
+        <thead><tr><th scope="col">Night of</th><th scope="col">Where</th><th scope="col">Lights out</th><th scope="col">Wake</th><th scope="col">Note</th></tr></thead>
+        <tbody>
+        {% for day in mode_card.plan.days[:6] %}
+        <tr><th scope="row">{{ day.day.strftime('%a %d %b') }}</th><td>{{ day.where|capitalize }}</td><td>{{ day.bedtime.strftime('%H:%M') }}</td><td>{{ day.wake.strftime('%H:%M') }}</td><td class="muted">{{ day.note }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% if mode_card.plan.days|length > 6 %}<p class="muted">…and {{ mode_card.plan.days|length - 6 }} more days until you've adjusted.</p>{% endif %}
+    {% endif %}
+    {% if mode_card.tips %}<ul class="mode-tips">{% for tip in mode_card.tips %}<li>{{ tip }}</li>{% endfor %}</ul>{% endif %}
+</section>
+{% endif %}
+
+<section class="card tips-card section-gap" aria-labelledby="tips-title" data-sleep-tips>
+    <p class="eyebrow" data-tips-label>TIPS FOR YOUR SLEEP GOAL</p>
+    <h2 id="tips-title">Getting closer to {{ snapshot.sleep_need_h|duration_h }} a night</h2>
+    <ul class="tips-list" data-tips-list><li class="muted">Thinking about your week…</li></ul>
+</section>
+
 {% if last_night_guess %}
-<section class="card checkin-card" id="check-in" aria-labelledby="checkin-title">
+<section class="card checkin-card section-gap" id="check-in" aria-labelledby="checkin-title">
     <p class="eyebrow">MORNING CHECK-IN</p>
     <h2 id="checkin-title">How did you sleep last night?</h2>
     <form method="post" action="/sleep-history" class="checkin-form">
@@ -24,131 +130,40 @@
             <button class="rating-button" type="submit" name="rating" value="{{ value }}"><span aria-hidden="true">{{ face }}</span>{{ label }}</button>
             {% endfor %}
         </div>
-        <p class="muted">Pre-filled from your usual routine, so adjust the times if last night was different. Your ratings teach Doze how much sleep you need.</p>
+        <p class="muted">Pre-filled from your usual routine. Starting estimate from your profile until you check in.</p>
     </form>
 </section>
 {% endif %}
-<section class="stats-grid today-overview" aria-label="Your sleep context">
-    <article class="card">
-        {% if not bedtime.feasible %}
-        <span class="card-label">Tonight</span>
-        <p class="metric-value">No window</p>
-        <p class="muted">No suitable sleep window fits. <a href="/sleep-planner">See why</a></p>
-        {% elif bedtime.in_progress %}
-        <span class="card-label">Asleep now · wake up</span>
-        <p class="metric-value">{{ bedtime.alarm|clock_ceil }}</p>
-        <p class="muted">≈ {{ bedtime.remaining_sleep_h|duration_h }} of sleep left</p>
-        {% else %}
-        <span class="card-label">Start winding down</span>
-        <p class="metric-value">{{ bedtime.wind_down|clock }}</p>
-        <p class="muted">Lights out {{ bedtime.bedtime|clock }} · wake {{ bedtime.alarm|clock_ceil }}</p>
-        {% endif %}
-    </article>
-    <article class="card">
-        <span class="card-label">Estimated sleep need</span>
-        <p class="metric-value">{{ snapshot.sleep_need_h|duration_h }}</p>
-        <p class="muted">{% if informative_check_ins %}From {{ informative_check_ins }} informative morning check-in{{ 's' if informative_check_ins != 1 else '' }}{% else %}Starting estimate from your profile{% endif %}</p>
-        <div class="card-sub">
-            <span class="card-label">Last recorded night</span>
-            {% if snapshot.last_night %}
-            <p><strong>{{ snapshot.last_night.hours_asleep|duration_h }}</strong> <span class="muted">· {{ snapshot.last_night.morning.strftime('%d %b') }}{% if snapshot.last_night.hours_asleep < snapshot.sleep_need_h %} · {{ (snapshot.sleep_need_h - snapshot.last_night.hours_asleep)|duration_h }} short{% endif %}</span></p>
-            {% else %}
-            <p class="muted">Not logged · <a href="#check-in">Check in above</a></p>
-            {% endif %}
-        </div>
-    </article>
-    <article class="card blue-card">
-        <span class="card-label">{% if next_event_in_progress %}Happening now{% else %}Next commitment{% endif %}</span>
-        {% if next_event %}
-        <p class="metric-value">{{ next_event.start|clock }}</p>
-        <p>{{ next_event.title }}</p>
-        <p class="muted">{{ next_event.start.strftime('%a %d %b') }}</p>
-        {% else %}
-        <p class="metric-value">Room to plan</p>
-        <p class="muted">No upcoming commitments saved. <a href="/calendar">View calendar</a></p>
-        {% endif %}
-    </article>
+
+<section class="card demo-card section-gap" aria-labelledby="demo-title">
+    <p class="eyebrow">DEMO</p>
+    <h2 id="demo-title">Try a mode with sample data</h2>
+    <p class="muted">Signs you in to a separate demo student, so your own data isn't changed.{% if not is_demo %} Log out to come back to your account.{% endif %}</p>
+    <div class="demo-buttons">
+        {% for key, demo in demos.items() %}
+        <form method="post" action="/demo/{{ key }}"><button class="nap-chip{% if mode_card and mode_card.mode == key or (not mode_card and key == 'normal' and is_demo) %} is-active{% endif %}" type="submit">{{ demo.icon }} {{ demo.label }}</button></form>
+        {% endfor %}
+    </div>
 </section>
-
-<section class="dashboard-grid today-plans" aria-label="Your next step and bedtime plan">
-    <article class="card feature-card">
-        {% if next_action.kind in ('nap', 'rest', 'log') %}
-        <p class="eyebrow">NAP</p>
-        <h2>Need a recharge?</h2>
-        {% include "_nap_button.html" %}
-        {% else %}
-        <p class="eyebrow">YOUR NEXT STEP</p>
-        <h2>{{ next_action.title }}</h2>
-        <p>{{ next_action.body }}</p>
-        <div class="action-row section-gap">
-            <a class="button" href="{{ next_action.href }}">{{ next_action.label }} <span aria-hidden="true">→</span></a>
-        </div>
-        {% endif %}
-    </article>
-
-    <article class="card">
-        <p class="eyebrow">YOUR BEDTIME PLAN</p>
-        <h2>{% if bedtime.in_progress %}Your current sleep window{% else %}Make room for tonight{% endif %}</h2>
-        {% if bedtime.feasible %}
-        {% with night = bedtime %}{% include "_night_timeline.html" %}{% endwith %}
-        {% if not bedtime.in_progress %}<p class="muted">Based on your routine{% if has_completed_history %} and recorded nights{% endif %}.</p>{% endif %}
-        {% else %}
-        <p class="notice warning">No suitable sleep window fits. Review your commitments and the full explanation before making a plan.</p>
-        {% endif %}
-        <div class="action-row section-gap"><a class="button secondary" href="/sleep-planner">View bedtime plan <span aria-hidden="true">→</span></a></div>
-        {% if bedtime.warnings %}<div class="notice warning section-gap"><ul>{% for warning in bedtime.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
-    </article>
-</section>
-
-<section class="dashboard-grid today-charts" aria-label="Your forecast and recent nights">
-    <article class="card chart-section">
-        <div class="card-heading"><h2>Estimated alertness today</h2><span class="muted">Model estimate · 0–100</span></div>
-        {% if has_completed_history %}
-        <p class="muted">A forecast from saved sleep, your usual routine and the planned night. Gaps indicate sleep.</p>
-        {% if not snapshot.last_night %}<p class="notice section-gap">Your latest night is missing. Log it to improve the starting point for this estimate.</p>{% endif %}
-        <canvas class="alertness-chart" data-chart="dashboard-curve" aria-label="Estimated alertness today, from zero to one hundred; gaps indicate sleep" role="img">Estimated alertness over time. Open your bedtime plan for the recommendation and its explanation.</canvas>
-        <script type="application/json" id="dashboard-curve">{{ {"Forecast": curve}|tojson }}</script>
-        {% else %}
-        <div class="empty-state"><h3>Your day will take shape here.</h3><p>Record a completed night to build a forecast from your sleep history. Until then, recommendations use profile defaults.</p><a class="text-link" href="#check-in">Log your sleep <span aria-hidden="true">→</span></a></div>
-        {% endif %}
-    </article>
-    <article class="card chart-section">
-        <div class="card-heading"><h2>Recent recorded sleep</h2><span class="muted">Last 7 dates</span></div>
-        {% if has_completed_history %}
-        <p class="muted">Estimated hours asleep from completed primary sleep, grouped by wake-up date. Missing nights stay empty.</p>
-        <canvas class="alertness-chart" data-chart="dashboard-sleep" data-chart-kind="bar" aria-label="Estimated recorded sleep in hours for the last seven dates; missing dates are not zero" role="img">Open My sleep to review each logged night.</canvas>
-        <script type="application/json" id="dashboard-sleep">{{ recent_sleep_chart|tojson }}</script>
-        <p class="muted">The reference line is your current estimated sleep need.</p>
-        <a class="text-link" href="/sleep-history">See all nights →</a>
-        {% else %}
-        <div class="empty-state"><h3>No nights logged yet.</h3><p>Do the morning check-in above, and your nights will show up here.</p></div>
-        {% endif %}
-    </article>
-</section>
-
-<section class="sleep-demo">
-    <h2>Sleep Now</h2>
-
-    <p>
-        Wake up and help the world!
-    </p>
-
-    <button id="sleep-now-btn" type="button">
-        I'm sleeping now
-    </button>
-
-    <p id="sleep-demo-status" aria-live="polite"></p>
-
-    <button id="stop-demo-btn" type="button" hidden>
-        Stop demo alarm
-    </button>
-</section>
-
-<script src="/static/js/sleep-demo.js" defer></script>
-
-</div>
 
 {% if snapshot.gp_card %}
 <aside class="card section-gap"><h2>{{ snapshot.gp_card.title }}</h2><p>{{ snapshot.gp_card.body }}</p><ul>{% for point in snapshot.gp_card.points %}<li>{{ point }}</li>{% endfor %}</ul></aside>
 {% endif %}
+{% endblock %}
+{% block extra_scripts %}
+<script src="{{ url_for('static', path='/js/sleep-demo.js') }}?v=3" defer></script>
+<script src="{{ url_for('static', path='/js/what-if.js') }}?v=2" defer></script>
+<script>
+(() => {  // Load personal tips after the page is shown, so Today stays fast.
+    const box = document.querySelector("[data-sleep-tips]"); if (!box) return;
+    const list = box.querySelector("[data-tips-list]"), label = box.querySelector("[data-tips-label]");
+    fetch("/api/me/sleep-tips", {headers: {"Accept": "application/json"}, credentials: "same-origin"})
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(result => {
+            list.replaceChildren(...result.tips.map(t => Object.assign(document.createElement("li"), {textContent: t})));
+            if (result.source === "gemini") label.textContent = "TIPS FOR YOUR SLEEP GOAL · BY GEMINI";
+        })
+        .catch(() => { list.replaceChildren(Object.assign(document.createElement("li"), {textContent: "Tips couldn't load just now.", className: "muted"})); });
+})();
+</script>
 {% endblock %}

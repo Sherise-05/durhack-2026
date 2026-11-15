@@ -11,7 +11,7 @@
         main: $("[data-nap-main]"), icon: $("[data-nap-icon]"), eyebrow: $("[data-nap-eyebrow]"),
         title: $("[data-nap-title]"), sub: $("[data-nap-sub]"), panel: $("[data-nap-panel]"),
         reasonLabel: $("[data-nap-reason-label]"), reason: $("[data-nap-reason]"),
-        warnings: $("[data-nap-warnings]"), anyway: $("[data-nap-anyway]"), cancel: $("[data-nap-cancel]"),
+        warnings: $("[data-nap-warnings]"), cancel: $("[data-nap-cancel]"),
     };
     const clock = new Intl.DateTimeFormat("en-GB", {timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
     const hhmm = iso => clock.format(new Date(iso));
@@ -90,10 +90,9 @@
         clearInterval(timer); timer = null;
         plan = null; chimed = false; save();
         els.panel.hidden = true;
-        els.anyway.hidden = true;
         els.cancel.hidden = false;
         showWarnings([]);
-        show("idle", {eyebrow: "Feeling tired?", title: "Tap for a nap", sub: "Doze picks the best time today and sets the alarm"});
+        show("idle", {eyebrow: "Tired right now?", title: "Nap now", sub: "Doze sets the alarm for you"});
     }
 
     function tick() {
@@ -116,7 +115,6 @@
     function begin(p) {
         plan = p; save();
         els.panel.hidden = false;
-        els.anyway.hidden = true;
         clearInterval(timer);
         tick();
         timer = setInterval(tick, 1000);
@@ -137,7 +135,7 @@
     async function loadReason(label) {
         showReason("Thinking about your day…", null, label);
         try {
-            const result = await post("/api/me/nap-now/reason");
+            const result = await post("/api/me/nap-now/reason?start=now");
             showReason(result.reason, result.source, label);
             if (plan) { plan.reason = result.reason; plan.source = result.source; save(); }
         } catch (e) {
@@ -151,32 +149,27 @@
         if (state !== "idle" && state !== "none") return; // a nap is already counting down
         unlockAudio();
         try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch (e) { /* ignore */ }
-        show("loading", {eyebrow: "One moment", title: "Finding your best nap…", sub: "Checking your sleep, body clock and calendar"});
+        show("loading", {eyebrow: "One moment", title: "Setting your nap…", sub: "Checking your sleep, body clock and calendar"});
         let result;
         try {
-            result = await post("/api/me/nap-now");
+            result = await post("/api/me/nap-now?start=now");
         } catch (e) {
             reset();
             show("idle", {eyebrow: "Something went wrong", title: "Tap to try again", sub: "Doze couldn't reach the nap planner"});
             return;
         }
         showWarnings(result.warnings);
-        if (result.status === "none") {
+        if (result.status === "blocked") {
             plan = null; save();
             els.panel.hidden = false;
             els.cancel.hidden = true;
-            els.anyway.hidden = !result.can_nap_anyway;
-            if (result.can_nap_anyway) {
-                els.anyway.textContent = `Nap anyway: alarm ${hhmm(result.alarm)} (${result.sleep_min} min)`;
-                els.anyway.onclick = () => { els.cancel.hidden = false; begin({...result, pressed_at: Date.now(), reason: els.reason.textContent}); };
-            }
-            show("none", {eyebrow: "Doze checked your day", title: "No nap needed right now", sub: "Tap to check again later", icon: "☀"});
+            show("none", {eyebrow: "Not right now", title: "Skip the nap", sub: "Tap to check again later", icon: "☀"});
             loadReason("Why not now");
             return;
         }
         els.cancel.hidden = false;
         begin({...result, pressed_at: Date.now()});
-        loadReason(result.status === "later" ? "Why this time" : "Why now");
+        loadReason("Why this timing");
     }
 
     els.main.addEventListener("click", press);
@@ -188,7 +181,7 @@
         chimed = Date.now() > Date.parse(stored.lie_down);
         begin(stored);
         showWarnings(stored.warnings);
-        showReason(stored.reason || "", stored.source, stored.status === "later" ? "Why this time" : "Why now");
+        showReason(stored.reason || "", stored.source, "Why this timing");
         document.addEventListener("click", unlockAudio, {once: true});
     } else {
         reset();

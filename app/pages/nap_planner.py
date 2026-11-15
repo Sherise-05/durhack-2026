@@ -1,14 +1,17 @@
 """The nap button: validate a self-report and pass real inputs to the brain."""
 
-from fastapi import APIRouter, Form, Request
+from datetime import timedelta
+
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict
 
 from app import web
-from app.schemas import Tiredness
+from app.schemas import LocalDatetime, Tiredness
 from app.services import db, nap_now
 from app.services.nap_recc import recommend_nap
 from app.services.sleep_model import PersonModel
+from app.time_utils import instant, local_isoformat
 
 router = APIRouter()
 
@@ -59,20 +62,45 @@ def nap_api(payload: NapRequest):
     return plan.model_dump(mode="json")
 
 
+def _nap_choice(data, now, model, start: str | None):
+    if start == "now":  # "Nap now": start immediately
+        return nap_now.start_now(data, now, model=model)
+    return nap_now.choose_nap(data, now, model=model)  # best time today
+
+
 @router.post("/api/me/nap-now")
-def nap_now_api():
-    """The one-tap nap button: the maths picks the best nap time today."""
+def nap_now_api(start: str | None = None):
+    """The nap buttons: best time today, or (start=now) a nap starting now."""
     data = db.load_user_data()
     now = web.local_now()
-    status, plan = nap_now.choose_nap(data, now)
+    status, plan = _nap_choice(data, now, PersonModel(data, now), start)
     return nap_now.plan_payload(status, plan)
 
 
 @router.post("/api/me/nap-now/reason")
-def nap_reason_api():
+def nap_reason_api(start: str | None = None):
     """A short explanation of the same choice (Gemini, or Doze's own words)."""
     data = db.load_user_data()
     now = web.local_now()
     model = PersonModel(data, now)
-    status, plan = nap_now.choose_nap(data, now, model=model)
+    status, plan = _nap_choice(data, now, model, start)
     return nap_now.explain(data, now, status, plan, model=model)
+
+
+class NapWhatIf(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    at: LocalDatetime
+
+
+@router.post("/api/me/nap-what-if")
+def nap_what_if_api(payload: NapWhatIf):
+    """Today's nap "What if…" chips: a nap at this time, against no nap. Nothing is saved."""
+    data = db.load_user_data()
+    now = web.local_now()
+    if instant(payload.at) < instant(now) - timedelta(minutes=5) or payload.at.date() != now.date():
+        raise HTTPException(status_code=422, detail="Choose a time later today.")
+    result = nap_now.nap_what_if(data, now, payload.at, model=PersonModel(data, now))
+    for key in ("lie_down", "alarm"):
+        result[key] = local_isoformat(result[key]) if result[key] is not None else None
+    result["events"] = [{**e, "start": local_isoformat(e["start"])} for e in result["events"]]
+    return result

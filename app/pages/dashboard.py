@@ -8,7 +8,9 @@ from fastapi.responses import HTMLResponse
 
 from app import web
 from app.schemas import EventCategory
-from app.services import db, planner
+from app.schemas import Mode
+from app.services import db, demo_modes, nap_now, planner, sleep_tips
+from app.services.modes import MODES, back_to_term_plan, effective_mode, exam_wake_time, jet_lag_plan, upcoming_exams
 from app.services.nap_recc import recommend_nap
 from app.services.sleep_model import PersonModel, nightly_stats
 from app.time_utils import instant, local_isoformat
@@ -104,8 +106,44 @@ def dashboard(request: Request):
             "has_sleep_history": bool(data.sessions),
             "has_completed_history": bool(nights),
             "last_night_guess": None if snapshot.last_night or bedtime.in_progress else _last_night_guess(data.profile, now),
+            "nap_suggestion": _nap_suggestion(data, now, model),
+            "nap_options": [] if bedtime.in_progress else nap_now.nap_options(now, bedtime.bedtime),
+            "debt_h": model.debt_h,
+            "mode_card": _mode_card(data, now),
+            "demos": demo_modes.DEMOS,
+            "is_demo": demo_modes.is_demo_account(getattr(request.state, "account", None)),
         },
     )
+
+
+def _mode_card(data, now):
+    """What the active mode changes, so each mode is visible on Today."""
+    mode, reason = effective_mode(data, now)
+    if mode == Mode.NORMAL:
+        return None
+    card = {"mode": mode.value, "label": MODES[mode].label, "reason": reason, "tips": list(MODES[mode].tips[:2]),
+            "plan": None, "exams": [], "fixed_wake": None}
+    if mode == Mode.EXAM:
+        card["exams"] = upcoming_exams(data.events, now)[:3]
+        card["fixed_wake"] = exam_wake_time(data, now)
+    elif mode == Mode.HOLIDAY:
+        card["plan"] = back_to_term_plan(data, now)
+    elif mode == Mode.TRAVEL:
+        card["plan"] = jet_lag_plan(data, now.date(), now=now)
+    return card
+
+
+def _nap_suggestion(data, now, model):
+    status, plan = nap_now.choose_nap(data, now, model=model)
+    return {"status": status, "plan": plan}
+
+
+@router.get("/api/me/sleep-tips")
+def sleep_tips_api():
+    """Three personal tips for reaching your sleep goal (Gemini, or Doze's own)."""
+    data = db.load_user_data()
+    now = web.local_now()
+    return sleep_tips.tips(data, now, model=PersonModel(data, now))
 
 
 @router.get("/api/me/dashboard")

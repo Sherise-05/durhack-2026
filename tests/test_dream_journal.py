@@ -79,3 +79,18 @@ def test_model_output_is_validated_before_reaching_styles():
     assert cleaned["symbols"] == list(dream_insights._STYLE["calm"][1])
     assert cleaned["title"] == "Sky city" and cleaned["mood"] == "calm"
     assert dream_insights._clean({"mood": "furious"}, "monster chased me in the dark")["mood"] == "scary"
+
+
+def test_days_and_dreams_are_saved_and_shown_in_separate_columns(client):
+    client.post("/api/dreams", json={"content": "I was flying over the sea.", "kind": "dream"})
+    client.post("/api/dreams", json={"content": "Lecture, then lunch with friends.", "kind": "day"})
+    assert client.post("/api/dreams", json={"content": "x", "kind": "week"}).status_code == 422
+    page = client.get("/dream-journal")
+    assert [d["kind"] for d in page.context["dreams"]] == ["dream"]
+    assert [d["kind"] for d in page.context["days"]] == ["day"]
+    assert "🌙 Dreams" in page.text and "☀️ Days" in page.text
+
+
+def test_profile_offers_early_bird_and_night_owl(client):
+    page = client.get("/profile").text
+    assert "Early bird" in page and "Night owl" in page and 'value="neutral"' in page

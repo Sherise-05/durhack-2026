@@ -19,7 +19,19 @@
                 <div class="field"><label for="profile-bedtime">Usual bedtime</label><input id="profile-bedtime" type="time" name="usual_bedtime" value="{{ values.usual_bedtime[:5] }}" required></div>
                 <div class="field"><label for="profile-wake">Usual wake-up</label><input id="profile-wake" type="time" name="usual_wake" value="{{ values.usual_wake[:5] }}" required></div>
                 <div class="field"><label for="profile-routine">Morning routine, in minutes</label><input id="profile-routine" type="number" name="morning_routine_min" min="0" step="1" value="{{ values.morning_routine_min }}" required><small>Time from waking to being ready to leave.</small></div>
-                <div class="field"><label for="profile-clock">Your body clock</label><select id="profile-clock" name="chronotype">{% for value, label in [('early', 'I prefer early mornings'), ('neutral', 'Not sure'), ('late', 'I prefer later nights')] %}<option value="{{ value }}" {% if values.chronotype == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+                <fieldset class="field chronotype-field">
+                    <legend>Are you an early bird or a night owl?</legend>
+                    <div class="chronotype-options">
+                        {% for value, icon, label, hint in [('early', '☀️', 'Early bird', 'Sharpest in the morning'), ('late', '🌙', 'Night owl', 'Come alive at night')] %}
+                        <label class="chronotype-option">
+                            <input type="radio" name="chronotype" value="{{ value }}" {% if values.chronotype == value %}checked{% endif %}>
+                            <span class="chronotype-icon" aria-hidden="true">{{ icon }}</span>
+                            <strong>{{ label }}</strong><small>{{ hint }}</small>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <label class="chronotype-unsure"><input type="radio" name="chronotype" value="neutral" {% if values.chronotype not in ('early', 'late') %}checked{% endif %}> Not sure: use the average for my age</label>
+                </fieldset>
             </div>
             <details class="advanced-options">
                 <summary>More about your routine</summary>
@@ -36,7 +48,7 @@
         {% if profile.travel %}<dl class="timeline"><div><dt>Destination</dt><dd>{{ profile.travel.destination_tz.replace('_', ' ') }}</dd></div><div><dt>Departure</dt><dd>{{ profile.travel.departure.strftime('%d %b %Y, %H:%M') }} · {{ profile.travel.home_tz }}</dd></div><div><dt>Arrival</dt><dd>{{ profile.travel.arrival.strftime('%d %b %Y, %H:%M') }} · {{ profile.travel.destination_tz }}</dd></div></dl>{% endif %}
         {% if profile.term_starts %}<p class="muted">Usual routine resumes {{ profile.term_starts.strftime('%d %B %Y') }}.</p>{% endif %}
         <p class="muted section-gap">Find the reasons behind a recommendation in your nap or bedtime plan.</p>
-        <a class="text-link" href="/sleep-planner">View tonight’s plan →</a>
+        <a class="text-link" href="/dashboard">See tonight’s plan on Today →</a>
     </aside>
 </div>
 <section class="card section-gap">

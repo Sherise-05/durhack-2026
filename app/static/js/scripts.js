@@ -113,7 +113,7 @@
         });
     });
 
-    const colours = ["#6550a1", "#14756f", "#a05522"];
+    const colours = ["#553688", "#a98bdc", "#b4579f"];
     function makeTable(canvas, labels, rows) {
         if (canvas.dataset.tableReady) return;
         canvas.dataset.tableReady = "true";
@@ -139,14 +139,14 @@
         const left = 38, right = width - 12, top = 24, bottom = height - 45;
         const y = value => bottom - value / domain * (bottom - top);
         ctx.font = "12px system-ui, sans-serif";
-        ctx.fillStyle = "#526279"; ctx.lineWidth = 1;
+        ctx.fillStyle = "#6c6383"; ctx.lineWidth = 1;
         for (let i = 0; i <= 4; i++) {
             const value = domain * i / 4;
-            ctx.strokeStyle = "#dce5ed";
+            ctx.strokeStyle = "#ece5f6";
             ctx.beginPath(); ctx.moveTo(left, y(value)); ctx.lineTo(right, y(value)); ctx.stroke();
             ctx.fillText(String(Math.round(value * 10) / 10), 5, y(value) + 4);
         }
-        ctx.fillStyle = "#526279";
+        ctx.fillStyle = "#6c6383";
         ctx.fillText(isBar ? "Hours" : "Estimate · 0–100", left, 12);
         return {ctx, width, height, left, right, top, bottom, y};
     }
@@ -173,7 +173,7 @@
         const {ctx, left, right, bottom, y} = chart;
         const start = times[0], end = times[times.length - 1];
         const x = stamp => left + (stamp - start) / Math.max(end - start, 1) * (right - left);
-        ctx.textAlign = "center"; ctx.fillStyle = "#526279";
+        ctx.textAlign = "center"; ctx.fillStyle = "#6c6383";
         for (let i = 0; i < 4; i++) { const stamp = start + (end - start) * i / 3; ctx.textAlign = i === 0 ? "left" : i === 3 ? "right" : "center"; ctx.fillText(clock.format(new Date(stamp)), x(stamp), bottom + 23); }
         entries.forEach(([, points], series) => {
             ctx.strokeStyle = colours[series % colours.length]; ctx.lineWidth = 2.5;
@@ -207,11 +207,11 @@
         const x = index => left + step * (index + .5);
         ctx.fillStyle = colours[0];
         points.forEach((point, index) => { if (point.value === null || !Number.isFinite(point.value)) return; ctx.fillRect(x(index) - width / 2, y(point.value), width, bottom - y(point.value)); });
-        ctx.textAlign = "center"; ctx.fillStyle = "#526279"; ctx.font = "11px system-ui, sans-serif";
+        ctx.textAlign = "center"; ctx.fillStyle = "#6c6383"; ctx.font = "11px system-ui, sans-serif";
         const every = chart.width < 300 ? 2 : 1;
         points.forEach((point, index) => { if (index % every === 0 || index === points.length - 1) ctx.fillText(point.label, x(index), bottom + 23); });
         if (Number.isFinite(data.reference)) {
-            ctx.strokeStyle = "#14756f"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(left, y(data.reference)); ctx.lineTo(right, y(data.reference)); ctx.stroke(); ctx.setLineDash([]);
+            ctx.strokeStyle = "#8763c4"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(left, y(data.reference)); ctx.lineTo(right, y(data.reference)); ctx.stroke(); ctx.setLineDash([]);
         }
         makeTable(canvas, ["Wake-up date", "Estimated time asleep (hours)"], points.map(point => [point.label, point.value === null ? "Not recorded" : String(point.value)]));
         installReadout(canvas, points.length, index => `${points[index].label} · ${points[index].value === null ? "Not recorded" : `${points[index].value} hours estimated asleep`}`, x);
@@ -233,8 +233,8 @@
         ctx.font = "12px system-ui, sans-serif"; ctx.lineWidth = 1;
         const stepH = (hi - lo) > 720 ? 180 : 120;
         for (let m = lo; m <= hi; m += stepH) {
-            ctx.strokeStyle = "#dce5ed"; ctx.beginPath(); ctx.moveTo(left, y(m)); ctx.lineTo(right, y(m)); ctx.stroke();
-            ctx.fillStyle = "#526279"; ctx.textAlign = "left"; ctx.fillText(label(m), 4, y(m) + 4);
+            ctx.strokeStyle = "#ece5f6"; ctx.beginPath(); ctx.moveTo(left, y(m)); ctx.lineTo(right, y(m)); ctx.stroke();
+            ctx.fillStyle = "#6c6383"; ctx.textAlign = "left"; ctx.fillText(label(m), 4, y(m) + 4);
         }
         const step = (right - left) / points.length, barWidth = Math.min(step * .56, 26);
         const x = index => left + step * (index + .5);
@@ -249,7 +249,7 @@
             if (ctx.roundRect) ctx.roundRect(bx, top_, barWidth, h, r); else ctx.rect(bx, top_, barWidth, h);
             ctx.fill();
         });
-        ctx.textAlign = "center"; ctx.fillStyle = "#526279"; ctx.font = "11px system-ui, sans-serif";
+        ctx.textAlign = "center"; ctx.fillStyle = "#6c6383"; ctx.font = "11px system-ui, sans-serif";
         const every = width < 420 ? 3 : width < 640 ? 2 : 1;
         points.forEach((point, index) => { if (index % every === 0 || index === points.length - 1) ctx.fillText(point.label, x(index), bottom + 22); });
         const text = point => Number.isFinite(point.start) ? `${label(point.start)} → ${label(point.end)}` : "Not recorded";

@@ -150,3 +150,35 @@ def preview_api(payload: WhatIfRequest):
         return _preview(data, now, model, payload).model_dump(mode="json")
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+class ScenarioRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    preset: str
+
+
+@router.post("/api/me/what-if/scenario")
+def scenario_api(payload: ScenarioRequest):
+    """A one-tap What-if for Today's Tonight card: the scenario vs Doze's plan, as data."""
+    data, now, model, plan = _bedtime_context()
+    if payload.preset not in PRESETS:
+        raise HTTPException(status_code=422, detail="Unknown scenario.")
+    if not plan.feasible or plan.in_progress:
+        raise HTTPException(status_code=409, detail="There's no plan to compare against right now.")
+    bed, wake = _preset_times(plan, payload.preset)
+    if instant(bed) < instant(now):
+        raise HTTPException(status_code=422, detail="That bedtime has already passed.")
+    try:
+        preview = _preview(data, now, model, WhatIfRequest(bedtime=local_isoformat(bed), alarm=local_isoformat(wake)))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    compare = _comparison(data, now, model, plan, preview)
+    return {
+        "label": PRESETS[payload.preset][0],
+        "bedtime": local_isoformat(preview.bedtime),
+        "alarm": local_isoformat(preview.alarm),
+        "sleep_h": preview.sleep_h,
+        "sleep_delta_h": compare["sleep_delta_h"] if compare else None,
+        "events": [{**row, "start": local_isoformat(row["start"])} for row in (compare["events"] if compare else [])],
+        "warnings": preview.warnings,
+    }

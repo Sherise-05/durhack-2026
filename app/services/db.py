@@ -565,19 +565,22 @@ def create_dream_table():
 def _ensure_dream_columns(conn):
     """Older databases created ``dreams`` without these columns; add them in place."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(dreams)")}
-    for column in ("image_path", "details"):
+    for column, definition in (("image_path", "TEXT"), ("details", "TEXT"), ("kind", "TEXT NOT NULL DEFAULT 'dream'")):
         if column not in existing:
-            conn.execute(f"ALTER TABLE dreams ADD COLUMN {column} TEXT")
+            conn.execute(f"ALTER TABLE dreams ADD COLUMN {column} {definition}")
 
 
-def save_dream(user_id, title, content, details: dict | None = None):
+def save_dream(user_id, title, content, details: dict | None = None, kind: str = "dream"):
+    """Save a journal entry; ``kind`` is "dream" (a night's dream) or "day" (a day entry)."""
+    if kind not in ("dream", "day"):
+        raise ValueError("kind must be 'dream' or 'day'")
     with get_connection() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO dreams (user_id, title, content, details)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO dreams (user_id, title, content, details, kind)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (user_id, title, content, json.dumps(details) if details is not None else None)
+            (user_id, title, content, json.dumps(details) if details is not None else None, kind)
         )
         return cursor.lastrowid
 

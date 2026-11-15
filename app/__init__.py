@@ -55,7 +55,7 @@ def create_app(*, load_environment: bool = True):
     if load_environment:
         load_dotenv(PROJECT_ROOT / ".env")
 
-    from app.pages import auth, onboarding, calendar, dashboard, nap_planner, sleep_history, sleep_planner, dream_journal
+    from app.pages import auth, onboarding, calendar, dashboard, demo, nap_planner, sleep_history, sleep_planner, dream_journal
     from app.services import accounts, db
 
     db.init_db()
@@ -124,7 +124,7 @@ def create_app(*, load_environment: bool = True):
 
     app.mount("/static", StaticFiles(directory=PROJECT_ROOT /
               "app" / "static"), name="static")
-    for router in (auth.router, onboarding.router, dashboard.router, nap_planner.router, sleep_planner.router, calendar.router, sleep_history.router, dream_journal.router):
+    for router in (auth.router, onboarding.router, dashboard.router, nap_planner.router, sleep_planner.router, calendar.router, sleep_history.router, dream_journal.router, demo.router):
         app.include_router(router)
 
     @app.get("/health", include_in_schema=False)

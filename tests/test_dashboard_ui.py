@@ -60,8 +60,9 @@ def test_history_chart_keeps_missing_dates_unknown_and_preserves_sleep_gaps(clie
     record("monday", "2026-11-16T02:00Z", "2026-11-16T07:00Z")
     response = client.get("/dashboard")
     assert response.status_code == 200
-    assert "4h 30m" in response.text
-    chart = payload(response, "dashboard-sleep")
+    assert "4h 30m" in response.text  # last night, in the stats bar
+    # The chart itself is drawn on My sleep; Today still computes the same data.
+    chart = response.context["recent_sleep_chart"]
     assert chart["points"] == [
         {"label": "10 Nov", "value": None}, {"label": "11 Nov", "value": None},
         {"label": "12 Nov", "value": None}, {"label": "13 Nov", "value": None},
@@ -69,7 +70,7 @@ def test_history_chart_keeps_missing_dates_unknown_and_preserves_sleep_gaps(clie
         {"label": "16 Nov", "value": 4.5},
     ]
     assert chart["reference"] == response.context["snapshot"].sleep_need_h
-    assert any(point["alertness"] is None for point in payload(response, "dashboard-curve")["Forecast"])
+    assert any(point["alertness"] is None for point in response.context["curve"])
 
 
 def test_next_commitment_skips_completed_and_rest_events(client):

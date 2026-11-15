@@ -1,22 +1,50 @@
 {% extends "base.html" %}
-{% block title %}Dream journal | Doze{% endblock %}
+{% block title %}Dreams | Doze{% endblock %}
+{% macro postcard(dream) %}
+{% set d = dream.details %}
+<article class="dream-card" data-dream-id="{{ dream.id }}">
+    <div class="dream-art" style="--c1: {{ d.palette[0] }}; --c2: {{ d.palette[1] }}; --c3: {{ d.palette[2] }};" role="img" aria-label="Illustration: {{ d.symbols|join(' ') }}">
+        {% for symbol in d.symbols %}{% set pos = dream.layout[loop.index0] %}
+        <span class="dream-symbol" style="left: {{ pos.left }}%; top: {{ pos.top }}%; font-size: {{ '%.1f'|format(pos.size) }}rem; transform: rotate({{ pos.rotate }}deg);">{{ symbol }}</span>
+        {% endfor %}
+        <span class="mood-chip mood-{{ d.mood }} dream-mood">{{ d.mood }}</span>
+    </div>
+    <div class="dream-body">
+        <h3>{{ dream.title }}</h3>
+        <p class="dream-meta">
+            {% if dream.when %}<time datetime="{{ dream.when.isoformat() }}">{{ dream.when|datetime_label }}</time>{% endif %}
+            {% if dream.night %} · after {{ dream.night.hours|duration_h }} of sleep{% if dream.night.felt %}, felt {{ dream.night.felt }}{% endif %}{% endif %}
+        </p>
+        {% if d.summary %}<p class="dream-summary">{{ d.summary }}</p>{% endif %}
+        {% if d.tags %}<p class="dream-tags">{% for tag in d.tags %}<span>#{{ tag }}</span>{% endfor %}</p>{% endif %}
+        <details><summary>Read it all</summary><p class="dream-text">{{ dream.content }}</p></details>
+        <div class="action-row">
+            <button type="button" class="text-link-button read-entry" data-dream-content="{{ dream.content }}">🔊 Read aloud</button>
+            <button type="button" class="text-link-button delete-entry" data-dream-id="{{ dream.id }}">Delete</button>
+        </div>
+    </div>
+</article>
+{% endmacro %}
 {% block content %}
-<section class="welcome">
-    <p class="eyebrow">DREAM JOURNAL</p>
-    <h1>What did you dream?</h1>
-    <p>Tell Doze before it fades. It gives each dream a title, a mood and its own postcard.</p>
+<section class="today-heading">
+    <h1>Dreams &amp; days</h1>
+    <p class="muted">Write down last night's dream or how your day went. Doze titles it and draws a little postcard.</p>
 </section>
 
 <section class="card dream-capture" aria-labelledby="capture-title">
-    <h2 id="capture-title" class="sr-only">Record a dream</h2>
+    <h2 id="capture-title" class="sr-only">New entry</h2>
     <form id="dream-form" data-dream-form>
+        <div class="tab-switch kind-switch" role="radiogroup" aria-label="What are you writing about?">
+            <label><input type="radio" name="kind" value="dream" checked> 🌙 Dream</label>
+            <label><input type="radio" name="kind" value="day"> ☀️ Day</label>
+        </div>
         <button type="button" class="dream-mic" id="record-dream" data-state="idle">
             <span class="dream-mic-icon" aria-hidden="true">🎙</span>
             <span><strong data-mic-label>Tap and tell Doze your dream</strong><small data-mic-hint>Speak naturally. Your words appear below.</small></span>
         </button>
         <div class="field section-gap">
-            <label for="dream-content">Your dream</label>
-            <textarea id="dream-content" rows="6" maxlength="10000" placeholder="I was walking through a city in the clouds, and…" required></textarea>
+            <label for="dream-content" data-content-label>Your dream</label>
+            <textarea id="dream-content" rows="5" maxlength="10000" placeholder="I was walking through a city in the clouds, and…" required></textarea>
             <small class="muted" data-interim aria-live="polite"></small>
         </div>
         <details class="section-gap">
@@ -34,45 +62,25 @@
     </form>
 </section>
 
-<section class="section-gap" aria-labelledby="diary-title">
-    <div class="section-heading">
-        <h2 id="diary-title">Your dreams</h2>
-        <p class="muted">{{ dreams|length }} saved{% if moods %} · mostly {{ moods[0][0] }}{% endif %}</p>
-    </div>
-    {% if moods|length > 1 %}
-    <div class="mood-row" aria-label="Dream moods">{% for mood, count in moods %}<span class="mood-chip mood-{{ mood }}">{{ mood }} · {{ count }}</span>{% endfor %}</div>
-    {% endif %}
-    <div class="dream-grid">
-        {% for dream in dreams %}
-        {% set d = dream.details %}
-        <article class="dream-card" data-dream-id="{{ dream.id }}">
-            <div class="dream-art" style="--c1: {{ d.palette[0] }}; --c2: {{ d.palette[1] }}; --c3: {{ d.palette[2] }};" role="img" aria-label="Illustration: {{ d.symbols|join(' ') }}">
-                {% for symbol in d.symbols %}{% set pos = dream.layout[loop.index0] %}
-                <span class="dream-symbol" style="left: {{ pos.left }}%; top: {{ pos.top }}%; font-size: {{ '%.1f'|format(pos.size) }}rem; transform: rotate({{ pos.rotate }}deg);">{{ symbol }}</span>
-                {% endfor %}
-                <span class="mood-chip mood-{{ d.mood }} dream-mood">{{ d.mood }}</span>
-            </div>
-            <div class="dream-body">
-                <h3>{{ dream.title }}</h3>
-                <p class="dream-meta">
-                    {% if dream.when %}<time datetime="{{ dream.when.isoformat() }}">{{ dream.when|datetime_label }}</time>{% endif %}
-                    {% if dream.night %} · after {{ dream.night.hours|duration_h }} of sleep{% if dream.night.felt %}, felt {{ dream.night.felt }}{% endif %}{% endif %}
-                </p>
-                {% if d.summary %}<p class="dream-summary">{{ d.summary }}</p>{% endif %}
-                {% if d.tags %}<p class="dream-tags">{% for tag in d.tags %}<span>#{{ tag }}</span>{% endfor %}</p>{% endif %}
-                <details><summary>Read the full dream</summary><p class="dream-text">{{ dream.content }}</p></details>
-                <div class="action-row">
-                    <button type="button" class="text-link-button read-entry" data-dream-content="{{ dream.content }}">🔊 Read aloud</button>
-                    <button type="button" class="text-link-button delete-entry" data-dream-id="{{ dream.id }}">Delete</button>
-                </div>
-            </div>
-        </article>
-        {% else %}
-        <div class="card empty-state"><h3>No dreams yet</h3><p class="muted">Tomorrow morning, tap the mic before your dream fades.</p></div>
-        {% endfor %}
-    </div>
-</section>
+<div class="journal-columns section-gap">
+    <section aria-labelledby="dreams-title">
+        <div class="section-heading"><h2 id="dreams-title">🌙 Dreams</h2><p class="muted">{{ dreams|length }}</p></div>
+        <div class="dream-grid">
+            {% for dream in dreams %}{{ postcard(dream) }}{% else %}
+            <div class="card empty-state"><p class="muted">No dreams yet. Tomorrow morning, tap the mic before your dream fades.</p></div>
+            {% endfor %}
+        </div>
+    </section>
+    <section aria-labelledby="days-title">
+        <div class="section-heading"><h2 id="days-title">☀️ Days</h2><p class="muted">{{ days|length }}</p></div>
+        <div class="dream-grid">
+            {% for day in days %}{{ postcard(day) }}{% else %}
+            <div class="card empty-state"><p class="muted">No days yet. Switch to “Day” above to write how today went.</p></div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
 {% endblock %}
 {% block extra_scripts %}
-<script src="{{ url_for('static', path='/js/dream-journal.js') }}?v=2" defer></script>
+<script src="{{ url_for('static', path='/js/dream-journal.js') }}?v=3" defer></script>
 {% endblock %}

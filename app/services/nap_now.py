@@ -18,13 +18,14 @@ import httpx
 from app.schemas import NapRecommendation, Tiredness, UserData
 from app.services import planner
 from app.services.modes import MODES, effective_mode
-from app.services.nap_recc import best_nap_slot, recommend_nap
+from app.services.nap_recc import _plan, best_nap_slot, recommend_nap
 from app.services.sleep_model import PersonModel
 from app.time_utils import instant
 
 log = logging.getLogger(__name__)
 NOW_TOLERANCE = timedelta(minutes=5)  # a slot this close to now counts as "nap now"
 DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest"  # fast; 2.5-flash is closed to new users
+NAP_ANYWAY_LATEST_H = 18  # our choice: never offer an optional nap in the evening
 
 
 def choose_nap(data: UserData, now: datetime, model: PersonModel | None = None) -> tuple[str, NapRecommendation]:
@@ -43,7 +44,20 @@ def choose_nap(data: UserData, now: datetime, model: PersonModel | None = None) 
     return ("now" if plan.should_nap else "none"), plan
 
 
-NAP_ANYWAY_LATEST_H = 18  # our choice: never offer an optional nap in the evening
+def start_now(data: UserData, now: datetime, model: PersonModel | None = None) -> tuple[str, NapRecommendation]:
+    """The "Nap now" button: a nap starting right now.
+
+    "now" when the maths predicts a benefit, "anyway" when the user can still take a
+    short nap (no clear benefit, but it fits), "blocked" when it doesn't fit at all
+    (already asleep, in an event, or too close to bedtime).
+    """
+    plan = recommend_nap(data, now, tiredness=Tiredness.TIRED, model=model)
+    if plan.alarm is None:
+        return "blocked", plan
+    if not plan.should_nap and plan.lie_down.hour >= NAP_ANYWAY_LATEST_H:
+        return "blocked", plan.model_copy(update={
+            "headline": "It's evening, so save your sleepiness for tonight: start winding down a little early instead"})
+    return ("now" if plan.should_nap else "anyway"), plan
 
 
 def plan_payload(status: str, plan: NapRecommendation) -> dict:
@@ -88,6 +102,8 @@ def nap_facts(data: UserData, now: datetime, status: str, plan: NapRecommendatio
             "later": "nap later today at the best moment",
             "now": "nap now",
             "none": "no nap recommended",
+            "anyway": "the user chose to nap now; the model predicts only a small benefit, so keep it short",
+            "blocked": "a nap doesn't fit right now",
         }[status],
         "lie_down": f"{plan.lie_down:%H:%M}",
         "alarm": f"{plan.alarm:%H:%M}" if plan.alarm else None,
@@ -110,21 +126,26 @@ def nap_facts(data: UserData, now: datetime, status: str, plan: NapRecommendatio
 def fallback_reason(facts: dict, status: str) -> str:
     """Doze's own short explanation from the same facts (no AI)."""
     parts = []
-    if status == "later":
+    if status == "anyway":
+        parts.append(f"Doze doesn't predict a big lift right now, but {facts['nap_minutes']} minutes is short "
+                     "enough to avoid waking from deep sleep.")
+    elif status == "blocked":
+        parts.append(facts["headline"].rstrip(".") + ".")
+    elif status == "later":
         parts.append(f"{facts['lie_down']} is your best moment today: it's when your alertness is predicted to dip lowest in a free gap.")
     elif status == "now":
         parts.append(f"A {facts['nap_minutes']}-minute nap now is predicted to lift your alertness"
                      + (f" from {facts['alertness_now_0_100']} to {facts['alertness_after_0_100']}." if facts["alertness_after_0_100"] else "."))
-    else:
+    elif status == "none":
         # The headline carries the real reason ("Too close to bedtime..."); drop the optional-alarm tail.
         reason = facts["headline"].split(". If you want one", 1)[0].rstrip(".")
         parts.append(reason + ".")
         daylight = next((r for r in facts["doze_reasons"] if "walk in daylight" in r), None)
         if daylight:
             parts.append(daylight)
-    if facts["next_event_after_nap"] and status != "none":
+    if facts["next_event_after_nap"] and status not in ("none", "blocked"):
         parts.append(f"You'll be awake and past the grogginess before {facts['next_event_after_nap']}.")
-    if status != "none":
+    if status not in ("none", "blocked"):
         parts.append(f"It uses about {facts['share_of_tonights_sleep_pressure_used_pct']}% of tonight's sleep pressure, so lights out can stay {facts['tonight']['lights_out']}.")
     return " ".join(parts)
 
@@ -173,3 +194,60 @@ def explain(data: UserData, now: datetime, status: str, plan: NapRecommendation,
     if text:
         return {"reason": text, "source": "gemini"}
     return {"reason": fallback_reason(facts, status), "source": "doze"}
+
+
+# --------------------------------------------------------------------------- nap what-if
+
+def nap_options(now: datetime, bedtime: datetime) -> list[dict]:
+    """Up to four lie-down times for Today's nap "What if…" chips."""
+    def round_up(t: datetime) -> datetime:
+        t = t.replace(second=0, microsecond=0)
+        return t + timedelta(minutes=(-t.minute) % 15)
+
+    latest = bedtime - timedelta(hours=2)
+    candidates = [("now", "Now", now), ("plus1", None, round_up(now + timedelta(hours=1))),
+                  ("plus2", None, round_up(now + timedelta(hours=2)))]
+    five = now.replace(hour=17, minute=0, second=0, microsecond=0)
+    if instant(five) > instant(now + timedelta(hours=2, minutes=15)):
+        candidates.append(("five", None, five))
+    options = []
+    for key, label, at in candidates:
+        if instant(at) <= instant(latest) and at.date() == now.date():
+            options.append({"key": key, "label": label or f"{at:%H:%M}", "at": at})
+    return options
+
+
+def nap_what_if(data: UserData, now: datetime, at: datetime, model: PersonModel | None = None) -> dict:
+    """Simulate a nap starting at ``at``: length, alarm, lift, cost to tonight and the
+    alertness at later events today with the nap vs without it."""
+    model = model or PersonModel(data, now)
+    bedtime = planner.recommend_bedtime(data, now, model=model).bedtime
+    plan = _plan(model, at, Tiredness.TIRED, bedtime)
+    events = []
+    if plan.alarm is not None:
+        for event in sorted(data.events, key=lambda e: instant(e.start)):
+            if event.category.value == "rest" or not (instant(plan.alarm) <= instant(event.start) < instant(bedtime)):
+                continue
+
+            def mean_during(points):
+                values = [p.alertness for p in points
+                          if p.alertness is not None and instant(event.start) <= instant(p.at) < instant(event.end)]
+                return round(sum(values) / len(values)) if values else None
+
+            with_nap, without_nap = mean_during(plan.with_nap), mean_during(plan.without_nap)
+            if with_nap is not None and without_nap is not None:
+                events.append({"title": event.title, "start": event.start, "with_nap": with_nap, "without_nap": without_nap})
+    return {
+        "possible": plan.alarm is not None,
+        "helps": plan.should_nap,
+        "lie_down": plan.lie_down,
+        "alarm": plan.alarm,
+        "sleep_min": plan.sleep_min,
+        "kind": plan.kind,
+        "alertness_before": round(plan.alertness_now) if plan.alertness_now is not None else None,
+        "alertness_after": round(plan.alertness_after) if plan.alertness_after is not None else None,
+        "tonight_cost_pct": round(plan.tonight_cost_pct),
+        "headline": plan.headline,
+        "events": events[:3],
+        "warnings": plan.warnings,
+    }
