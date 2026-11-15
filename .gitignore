@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# API keys
+.env
+
+
+# Mac
+.DS_Store
+
+# Editor
+.vscode/
+
