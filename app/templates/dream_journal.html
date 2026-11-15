@@ -1,0 +1,66 @@
+
+<section class="dream-journal">
+    <h1>Dream Journal</h1>
+    <p>Capture your dreams before they fade away.</p>
+
+    <form id="dream-form">
+        <label for="dream-title">Dream title</label>
+        <input
+            id="dream-title"
+            type="text"
+            placeholder="A city in the clouds"
+            maxlength="150"
+            required
+        >
+
+        <label for="dream-content">What did you dream?</label>
+        <textarea
+            id="dream-content"
+            rows="7"
+            maxlength="10000"
+            placeholder="I remember walking through..."
+            required
+        ></textarea>
+
+        <button type="button" id="record-dream">
+            🎙 Start speaking
+        </button>
+
+        <button type="button" id="read-dream">
+            Read aloud
+        </button>
+
+        <button type="button" id="stop-reading">
+            Stop reading
+        </button>
+
+        <button type="submit">Save Dream</button>
+
+        <p id="dream-status" role="status" aria-live="polite"></p>
+    </form>
+
+    <h2>My Dream Diary</h2>
+
+    <div class="dream-entries">
+        {% for dream in dreams %}
+        <article class="dream-entry">
+            <h3>{{ dream.title }}</h3>
+            <time>{{ dream.created_at }}</time>
+
+            <p style="white-space: pre-wrap;">{{ dream.content }}</p>
+
+            <button
+                type="button"
+                class="read-entry"
+                data-dream-content="{{ dream.content|e }}"
+            >
+                Read aloud
+            </button>
+        </article>
+        {% else %}
+        <p>No dreams recorded yet. Start your first entry!</p>
+        {% endfor %}
+    </div>
+</section>
+
+<script src="/static/js/dream-journal.js" defer></script>
