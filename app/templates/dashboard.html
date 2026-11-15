@@ -1,9 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dozed</title>
+    <title>Doze</title>
+
     <style>
         body {
             margin: 0;
@@ -16,9 +18,11 @@
             color: #F3CEFF;
             padding: 1rem;
             text-align: center;
-            font-size: 2rem;
-            margin: 0;
-            font-family: "Monaco", monospace;
+            font-family: Monaco, monospace;
+        }
+
+        header h1 {
+            font-size: 3rem;
         }
 
         main {
@@ -26,70 +30,257 @@
             color: white;
         }
 
-        .hero-box {
-            background: rgba(255, 255, 255, 0.25);
+        .hero-box, .bed_rec {
             border-radius: 12px;
             padding: 1.5rem;
             margin: 1rem auto;
             max-width: 600px;
-            color:white;
+            color: white;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             text-align: center;
         }
-        .nap-button {
-            background-color: #F3CEFF;
-            color: white;
+
+        .hero-box {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .bed_rec {
+            background: #F3CEFF;
+        }
+
+        button {
+            background: white;
+            color: #8665A3;
             border: none;
             padding: 0.75rem 1.5rem;
             font-size: 1rem;
             border-radius: 8px;
             cursor: pointer;
-            transition: background-color 0.3s ease;
-            
+            margin-top: 10px;
         }
-        .bed_rec{
-            background: #F3CEFF;
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin: 1rem auto;
-            max-width: 600px;
-            color:white;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            text-align: center;
+
+        button:hover {
+            background: #f5f5f5;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .recommendation-card {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-top: 15px;
+            text-align: left;
+        }
+
+        .recommendation-card h3 {
+            margin-top: 0;
+        }
+
+        #recommendations {
+            margin-top: 20px;
+        }
+
+        #sleep-insights {
+            font-weight: bold;
+            line-height: 1.6;
         }
     </style>
 </head>
+
 <body>
     <header>
-        <h1>Dozed</h1>
+        <h1>Doze</h1>
     </header>
+
     <main>
-         
+
+        <!-- NAP SECTION -->
         <div class="hero-box">
             <h2>Ready For A Nap?</h2>
-            <p>
-                click here to start your nap!
-            </p>
-            <button class  = "nap-button" onclick="startNap()">Start Nap</button>
+            <p>Click here to start your nap!</p>
+
+            <button onclick="startNap()">
+                Start Nap
+            </button>
         </div>
 
-       <div class = "bed_rec">
+        <!-- GEMINI RECOMMENDATIONS -->
+        <div class="bed_rec">
             <h2>Bedtime Recommendations</h2>
+
             <p>
-                click here to get your bedtime recommendations!
+                Let Doze analyse your sleep history,
+                preferences and upcoming calendar events.
             </p>
-            <button class  = "bed_rec" onclick="getBedtimeRecommendations()">Get Recommendations</button>
+
+            <div id="sleep-insights">
+                Loading sleep history...
+            </div>
+
+            <button
+                id="recommend-button"
+                onclick="getBedtimeRecommendations()"
+            >
+                ✨ Get Recommendations
+            </button>
+
+            <p id="loading-message"></p>
+
+            <div id="recommendations"></div>
         </div>
 
-        <script>
-            function startNap() {
-                alert("Nap started! Enjoy your rest.");
-            }
-
-            function getBedtimeRecommendations() {
-                alert("Here are your bedtime recommendations!");
-            }
-        </script>
     </main>
+
+    <script>
+        const personaId = "maya";
+
+        function startNap() {
+            alert("Nap started! Enjoy your rest.");
+        }
+
+        // Load sleep statistics when page opens
+        async function loadSleepInsights() {
+            const container = document.getElementById(
+                "sleep-insights"
+            );
+
+            try {
+                const response = await fetch(
+                    `/api/sleep-insights?persona_id=${personaId}`
+                );
+
+                if (!response.ok) {
+                    throw new Error("Failed to load sleep history");
+                }
+
+                const data = await response.json();
+
+                container.textContent =
+                    `Average sleep: ${data.average_sleep_hours} hours | ` +
+                    `Sleep goal: ${data.sleep_goal_hours} hours | ` +
+                    `Nights below goal: ${data.short_nights_last_7}`;
+
+            } catch (error) {
+                container.textContent =
+                    "Unable to load sleep history.";
+                console.error(error);
+            }
+        }
+
+        // Ask Gemini for personalised recommendations
+        async function getBedtimeRecommendations() {
+            const button = document.getElementById(
+                "recommend-button"
+            );
+
+            const loading = document.getElementById(
+                "loading-message"
+            );
+
+            const container = document.getElementById(
+                "recommendations"
+            );
+
+            button.disabled = true;
+            loading.textContent =
+                "Doze AI is analysing your sleep patterns...";
+
+            container.replaceChildren();
+
+            try {
+                const response = await fetch(
+                    `/api/sleep-coach?persona_id=${personaId}`,
+                    { method: "POST" }
+                );
+
+                if (!response.ok) {
+                    throw new Error("Gemini request failed");
+                }
+
+                const data = await response.json();
+
+                loading.textContent = "";
+
+                const summary = document.createElement("p");
+                summary.textContent = data.summary;
+                container.appendChild(summary);
+
+                const calendarInsight = document.createElement("p");
+                calendarInsight.textContent = data.calendar_insight;
+                container.appendChild(calendarInsight);
+
+                // Display each recommendation
+                for (const rec of data.recommendations) {
+
+                    const card = document.createElement("div");
+                    card.className = "recommendation-card";
+
+                    const title = document.createElement("h3");
+                    title.textContent = rec.title;
+
+                    const reason = document.createElement("p");
+                    reason.textContent = rec.reason;
+
+                    const applyButton = document.createElement("button");
+                    applyButton.textContent = rec.button_text;
+
+                    // Save the chosen recommendation
+                    applyButton.onclick = async function() {
+                        applyButton.disabled = true;
+
+                        try {
+                            const saveResponse = await fetch(
+                                `/api/sleep-actions?persona_id=${personaId}`,
+                                {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        title: rec.title,
+                                        action_type: rec.action_type,
+                                        action_value: rec.action_value
+                                    })
+                                }
+                            );
+
+                            if (!saveResponse.ok) {
+                                throw new Error("Could not save");
+                            }
+
+                            applyButton.textContent = "Saved ✓";
+                            await loadSleepInsights();
+
+                        } catch (error) {
+                            applyButton.disabled = false;
+                            applyButton.textContent = "Try again";
+                            console.error(error);
+                        }
+                    };
+
+                    card.appendChild(title);
+                    card.appendChild(reason);
+                    card.appendChild(applyButton);
+
+                    container.appendChild(card);
+                }
+
+            } catch (error) {
+                loading.textContent =
+                    "Unable to generate recommendations. Check the server.";
+                console.error(error);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        // Run when page loads
+        loadSleepInsights();
+    </script>
+
 </body>
 </html>

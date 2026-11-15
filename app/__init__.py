@@ -12,7 +12,9 @@ from app.pages import (
     nap_planner,
     sleep_planner,
     calendar,
-    sleep_history
+    sleep_history,
+    gemini,
+    sleep_coach
 )
 
 # Load environment variables from .env
@@ -42,6 +44,8 @@ def create_app():
 
     # Register routes
     app.include_router(dashboard.router)
+    app.include_router(sleep_coach.router)
+    app.include_router(gemini.router)
     app.include_router(nap_planner.router)
     app.include_router(sleep_planner.router)
     app.include_router(calendar.router)

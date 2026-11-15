@@ -1,3 +1,4 @@
+
 import sqlite3
 from pathlib import Path
 
@@ -12,12 +13,37 @@ def get_connection():
 
 def init_db():
     with get_connection() as conn:
+
+        # Existing sleep history table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sleep_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
                 duration REAL NOT NULL,
                 quality TEXT NOT NULL
+            )
+        """)
+
+        # User sleep preferences
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sleep_preferences (
+                persona_id TEXT PRIMARY KEY,
+                chronotype TEXT NOT NULL DEFAULT 'late',
+                sleep_goal REAL NOT NULL DEFAULT 8,
+                sleep_challenge TEXT NOT NULL DEFAULT 'late',
+                schedule_flexibility TEXT NOT NULL DEFAULT 'some'
+            )
+        """)
+
+        # Applied AI recommendations
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sleep_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                persona_id TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                action_value TEXT NOT NULL,
+                title TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         """)
 

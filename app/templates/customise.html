@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Customise | Doze{% endblock %}
+
+{% block content %}
+<section class="welcome">
+  <p class="eyebrow">PERSONALISE DOZE</p>
+  <h1>Discover your sleep personality</h1>
+  <p>Tell us about your sleep habits so Doze can adapt to you.</p>
+</section>
+
+<section class="card">
+  <form id="preferences-form">
+
+    <h2>Are you an Early Bird or Night Owl?</h2>
+
+    <label>
+      <input type="radio" name="chronotype" value="early">
+      ☀️ Early Bird
+    </label>
+
+    <label>
+      <input type="radio" name="chronotype" value="late" checked>
+      🌙 Night Owl
+    </label>
+
+    <h3>How many hours of sleep do you want?</h3>
+    <select name="sleep_goal">
+      <option value="7">7 hours</option>
+      <option value="8" selected>8 hours</option>
+      <option value="9">9 hours</option>
+    </select>
+
+    <h3>What's your biggest sleep challenge?</h3>
+    <select name="sleep_challenge">
+      <option value="late">Going to bed too late</option>
+      <option value="falling">Falling asleep</option>
+      <option value="waking">Waking up during the night</option>
+      <option value="schedule">Unpredictable schedule</option>
+    </select>
+
+    <h3>How flexible is your schedule?</h3>
+    <select name="schedule_flexibility">
+      <option value="very">Very flexible</option>
+      <option value="some">Some flexibility</option>
+      <option value="fixed">Mostly fixed</option>
+    </select>
+
+    <p style="margin-top: 24px;">
+      <button class="button" type="submit">
+        Save my preferences
+      </button>
+    </p>
+
+    <p id="save-status"></p>
+  </form>
+</section>
+
+<script>
+const form = document.getElementById("preferences-form");
+const status = document.getElementById("save-status");
+
+async function loadPreferences() {
+  const response = await fetch(
+    "/api/sleep-preferences?persona_id=maya"
+  );
+
+  if (!response.ok) return;
+
+  const prefs = await response.json();
+
+  for (const [key, value] of Object.entries(prefs)) {
+    const inputs = form.elements.namedItem(key);
+    if (!inputs) continue;
+
+    if (key === "chronotype") {
+      const selected = form.querySelector(
+        `input[name="chronotype"][value="${value}"]`
+      );
+      if (selected) selected.checked = true;
+    } else {
+      inputs.value = value;
+    }
+  }
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const values = Object.fromEntries(
+    new FormData(form).entries()
+  );
+
+  values.sleep_goal = Number(values.sleep_goal);
+
+  status.textContent = "Saving...";
+
+  try {
+    const response = await fetch(
+      "/api/sleep-preferences?persona_id=maya",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values)
+      }
+    );
+
+    if (!response.ok) throw new Error("Save failed");
+
+    status.textContent = "Preferences saved successfully!";
+  } catch (error) {
+    status.textContent = "Unable to save preferences.";
+  }
+});
+
+loadPreferences();
+</script>
+{% endblock %}
