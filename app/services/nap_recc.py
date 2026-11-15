@@ -54,15 +54,19 @@ from app.services.sleep_model import (
 
 POWER_NAPS = (10, 20)
 FULL_CYCLE = 90
-EARLY_AFTERNOON = (time(12, 0), time(15, 0))  # our choice for "early afternoon"
-LATE_NAP = time(15, 0)  # after 3 p.m. can make night sleep harder (Mayo Clinic)
+# our choice for "early afternoon"
+EARLY_AFTERNOON = (time(12, 0), time(15, 0))
+# after 3 p.m. can make night sleep harder (Mayo Clinic)
+LATE_NAP = time(15, 0)
 TOO_CLOSE_TO_BED_H = 2.0  # our choice: closer than this, go to bed early instead
 DEFAULT_BUFFER_MIN = 10  # our choice; exams and drives get GROGGY_MIN (20)
 SOON_AFTER_ALARM_MIN = 60
 
-SELF_REPORT = {Tiredness.FINE: 0.30, Tiredness.TIRED: 0.60, Tiredness.VERY_TIRED: 0.80}
+SELF_REPORT = {Tiredness.FINE: 0.30,
+               Tiredness.TIRED: 0.60, Tiredness.VERY_TIRED: 0.80}
 MODEL_SD, REPORT_SD = 0.12, 0.15
-NIGHT_COST = 6000.0  # alert-minutes per unit of sleep pressure lost by bedtime (our choice)
+# alert-minutes per unit of sleep pressure lost by bedtime (our choice)
+NIGHT_COST = 6000.0
 STEP_MIN = 5
 NAP_EFFICIENCY = 0.95
 
@@ -104,7 +108,8 @@ def _buffer_min(event: CalendarEvent) -> int:
 
 
 def _weight(events: list[CalendarEvent], t: datetime, weights: dict[EventCategory, float]) -> float:
-    active = [weights[e.category] for e in events if instant(e.start) <= instant(t) < instant(e.end)]
+    active = [weights[e.category]
+              for e in events if instant(e.start) <= instant(t) < instant(e.end)]
     return max(active, default=1.0)
 
 
@@ -131,9 +136,11 @@ def _plan(
 ) -> NapRecommendation:
     data, p = model.data, model.data.profile
     mode, _ = effective_mode(data, lie_down)
-    state = model.state if instant(lie_down) == instant(model.now) else model.state_at(lie_down)
+    state = model.state if instant(lie_down) == instant(
+        model.now) else model.state_at(lie_down)
     fatigue = model.phys.fatigue
-    start = replace(state, pressure=_clamp(fuse_tiredness(state.pressure + fatigue, tiredness) - fatigue))
+    start = replace(state, pressure=_clamp(fuse_tiredness(
+        state.pressure + fatigue, tiredness) - fatigue))
     alert_now = alertness(start, model.phys)
 
     def no_nap(headline: str, reasons: list[str], warnings: list[str] | None = None) -> NapRecommendation:
@@ -169,15 +176,21 @@ def _plan(
             ],
         )
 
-    future = [e for e in data.events if instant(e.start) >= instant(lie_down) and e.category != EventCategory.REST]
-    nxt = min(future, key=lambda e: instant(add_elapsed(e.start, -timedelta(minutes=e.travel_min + _buffer_min(e))))) if future else None
+    future = [e for e in data.events if instant(e.start) >= instant(
+        lie_down) and e.category != EventCategory.REST]
+    nxt = min(future, key=lambda e: instant(add_elapsed(
+        e.start, -timedelta(minutes=e.travel_min + _buffer_min(e))))) if future else None
     deadline = add_elapsed(bedtime, -timedelta(hours=TOO_CLOSE_TO_BED_H))
     if nxt is not None:
-        deadline = min(deadline, add_elapsed(nxt.start, -timedelta(minutes=nxt.travel_min + _buffer_min(nxt))), key=instant)
-    latency = time_to_fall_asleep_min(start.pressure, model.personal.latency_min)
+        deadline = min(deadline, add_elapsed(
+            nxt.start, -timedelta(minutes=nxt.travel_min + _buffer_min(nxt))), key=instant)
+    latency = time_to_fall_asleep_min(
+        start.pressure, model.personal.latency_min)
     onset = add_elapsed(lie_down, timedelta(minutes=latency))
-    early_afternoon = EARLY_AFTERNOON[0] <= lie_down.time() < EARLY_AFTERNOON[1]
-    options = [*POWER_NAPS, *([FULL_CYCLE] if tiredness == Tiredness.VERY_TIRED and early_afternoon else [])]
+    early_afternoon = EARLY_AFTERNOON[0] <= lie_down.time(
+    ) < EARLY_AFTERNOON[1]
+    options = [*POWER_NAPS, *([FULL_CYCLE] if tiredness ==
+                              Tiredness.VERY_TIRED and early_afternoon else [])]
 
     times = time_grid(lie_down, bedtime, STEP_MIN)
     event_weights = MODES[mode].event_weights
@@ -192,13 +205,15 @@ def _plan(
         if instant(alarm) > instant(deadline):
             too_long.append(minutes)
             continue
-        states = simulate(start, [SleepBlock(onset, alarm, NAP_EFFICIENCY, is_nap=True)], times)
+        states = simulate(
+            start, [SleepBlock(onset, alarm, NAP_EFFICIENCY, is_nap=True)], times)
         cost = max(0.0, base_bed - states[-1].pressure)
         score = _score(states, model.phys, weights, alarm) - NIGHT_COST * cost
         results.append((score, minutes, alarm, states, cost))
 
     if not results:
-        what = f"{nxt.title} at {nxt.start:%H:%M}" if nxt and instant(deadline) < instant(add_elapsed(bedtime, -timedelta(hours=TOO_CLOSE_TO_BED_H))) else "bedtime"
+        what = f"{nxt.title} at {nxt.start:%H:%M}" if nxt and instant(deadline) < instant(
+            add_elapsed(bedtime, -timedelta(hours=TOO_CLOSE_TO_BED_H))) else "bedtime"
         return no_nap(
             "Not enough time for a nap",
             [
@@ -212,12 +227,15 @@ def _plan(
     should = score > base_score
     kind = "full_cycle" if minutes == FULL_CYCLE else "power"
     after_t = add_elapsed(alarm, timedelta(minutes=30))
-    after = next((alertness(s, model.phys) for s in states if instant(s.at) >= instant(after_t)), None)
+    after = next((alertness(s, model.phys)
+                 for s in states if instant(s.at) >= instant(after_t)), None)
     cost_pct = round(100 * cost / base_bed, 1) if base_bed else 0.0
 
-    reasons = [f"Alarm {alarm:%H:%M}: about {latency:.0f} min to fall asleep, then {minutes} min of sleep.", LENGTH_WHY[minutes]]
+    reasons = [
+        f"Alarm {alarm:%H:%M}: about {latency:.0f} min to fall asleep, then {minutes} min of sleep.", LENGTH_WHY[minutes]]
     if too_long and nxt is not None and minutes < max(too_long):
-        reasons.append(f"A longer nap wouldn't leave time to wake up properly before {nxt.title}.")
+        reasons.append(
+            f"A longer nap wouldn't leave time to wake up properly before {nxt.title}.")
     reasons.append(NO_MID_NAPS)
     last = model.last_night
     if last is not None and last.hours_asleep < model.need_h - 0.5:
@@ -228,7 +246,8 @@ def _plan(
     if model.debt_h >= 1:
         reasons.append(f"You're carrying {fmt_h(model.debt_h)} of sleep debt.")
     if model.hrv and model.hrv[1] <= -10:
-        reasons.append(f"Your HRV is {-model.hrv[1]:.0f}% below your recent nightly baseline, which can mean your body is still recovering.")
+        reasons.append(
+            f"Your HRV is {-model.hrv[1]:.0f}% below your recent nightly baseline, which can mean your body is still recovering.")
     if tiredness in (Tiredness.TIRED, Tiredness.VERY_TIRED):
         reasons.append(f"You said you're {tiredness.value.replace('_', ' ')}.")
     if tiredness == Tiredness.FINE and model.debt_h >= 3:
@@ -238,17 +257,20 @@ def _plan(
         )
     dip = (model.phys.mid_sleep_h + AFTERNOON_DIP_H - 0.5) % 24
     if abs(clock_h(lie_down) - dip) <= 1.25:
-        reasons.append("You're in your body clock's afternoon dip, a natural time to nap.")
+        reasons.append(
+            "You're in your body clock's afternoon dip, a natural time to nap.")
     reasons.append(
         f"Cost to tonight: uses about {cost_pct:.0f}% of tonight's sleep pressure ({_band(cost_pct)}); "
         f"bedtime stays {bedtime:%H:%M}."
     )
     if not should:
-        reasons.append("Your predicted alertness holds up without one: a walk in daylight may do more.")
+        reasons.append(
+            "Your predicted alertness holds up without one: a walk in daylight may do more.")
 
     warnings = []
     if lie_down.time() >= LATE_NAP:
-        warnings.append("It's after 3 p.m.: late naps can make it harder to sleep well tonight (Mayo Clinic).")
+        warnings.append(
+            "It's after 3 p.m.: late naps can make it harder to sleep well tonight (Mayo Clinic).")
     if (
         nxt is not None
         and nxt.category in (EventCategory.EXAM, EventCategory.TRAVEL)

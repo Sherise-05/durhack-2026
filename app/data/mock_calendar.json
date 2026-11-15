@@ -1,0 +1,46 @@
+{
+    "items": [
+      {
+        "id": "event_001",
+        "summary": "University Lecture",
+        "start": {"dateTime": "2026-11-16T09:00:00Z"},
+        "end": {"dateTime": "2026-11-16T11:00:00Z"}
+      },
+      {
+        "id": "event_002",
+        "summary": "Lunch with Friends",
+        "start": {"dateTime": "2026-11-16T12:00:00Z"},
+        "end": {"dateTime": "2026-11-16T13:00:00Z"}
+      },
+      {
+        "id": "event_003",
+        "summary": "Coursework Study Session",
+        "start": {"dateTime": "2026-11-16T15:00:00Z"},
+        "end": {"dateTime": "2026-11-16T17:00:00Z"}
+      },
+      {
+        "id": "event_004",
+        "summary": "Society Meeting",
+        "start": {"dateTime": "2026-11-17T18:00:00Z"},
+        "end": {"dateTime": "2026-11-17T20:00:00Z"}
+      },
+      {
+        "id": "event_005",
+        "summary": "Part-time Work",
+        "start": {"dateTime": "2026-11-18T10:00:00Z"},
+        "end": {"dateTime": "2026-11-18T16:00:00Z"}
+      },
+      {
+        "id": "event_006",
+        "summary": "Coursework Deadline",
+        "start": {"dateTime": "2026-11-20T12:00:00Z"},
+        "end": {"dateTime": "2026-11-20T12:15:00Z"}
+      },
+      {
+        "id": "event_007",
+        "summary": "Movie Night",
+        "start": {"dateTime": "2026-11-20T19:00:00Z"},
+        "end": {"dateTime": "2026-11-20T22:00:00Z"}
+      }
+    ]
+  }

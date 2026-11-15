@@ -1,6 +1,20 @@
+<<<<<<< HEAD
 # Sleep maths (app/services: sleep_model, learning, modes, planner, nap_recc)
 pydantic>=2.7
 tzdata  # time-zone data for zoneinfo on Windows (jet-lag plans)
 
 # Tests
 pytest>=8
+=======
+fastapi
+uvicorn[standard]
+jinja2
+httpx
+python-dotenv
+asyncpg
+pydantic
+itsdangerous
+google-auth
+google-auth-oauthlib
+google-api-python-client
+>>>>>>> origin/template

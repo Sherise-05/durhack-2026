@@ -1,11 +1,16 @@
 # Python
-venv/
 __pycache__/
 *.pyc
-.pytest_cache/
+.venv/
+venv/
 
-# Secrets: never commit
+# API keys
 .env
 
-# OS
+
+# Mac
 .DS_Store
+
+# Editor
+.vscode/
+

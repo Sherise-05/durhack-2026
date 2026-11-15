@@ -1,0 +1,27 @@
+
+{% extends "base.html" %}
+
+{% block title %}Calendar | Doze{% endblock %}
+
+{% block content %}
+<section class="welcome">
+    <p class="eyebrow">YOUR SCHEDULE</p>
+    <h1>My Calendar</h1>
+    <p>See your upcoming commitments and find time to rest.</p>
+</section>
+
+<section class="card">
+    <h2>Upcoming Events</h2>
+
+    {% for event in events %}
+    <div class="event">
+        <span class="event-time">
+            {{ event.start }}
+        </span>
+        <span>{{ event.title }}</span>
+    </div>
+    {% else %}
+    <p class="muted">No upcoming events.</p>
+    {% endfor %}
+</section>
+{% endblock %}
