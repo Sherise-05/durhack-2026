@@ -9,6 +9,17 @@ templates = Jinja2Templates(directory="app/templates")
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    sleep_data = await fetch_sleep_history()
-    calendar_events = await fetch_calendar_events()
-    return templates.TemplateResponse("dashboard.html", {"request": request, "sleep_data": sleep_data, "calendar_events": calendar_events})
+    # sleep_data = await fetch_sleep_history()
+    sleep_data = []
+    # calendar_events = await fetch_calendar_events()
+    calendar_events = []
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html",
+        context={
+            "sleep_data": sleep_data,
+            "calendar_events": calendar_events
+        })
+
+    # return templates.TemplateResponse("dashboard.html", {"request": request, "sleep_data": sleep_data, "calendar_events": calendar_events})
