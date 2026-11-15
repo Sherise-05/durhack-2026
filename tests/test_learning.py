@@ -40,7 +40,7 @@ def test_morning_check_ins_move_the_need_belief():
 
 
 def test_more_check_ins_tighten_the_belief():
-    nights = [night(-k, rating=3) for k in range(14, 0, -1)]
+    nights = [night(-k, rating=4) for k in range(14, 0, -1)]
     few = learning.sleep_need_belief(profile(), nights[-2:])
     many = learning.sleep_need_belief(profile(), nights)
     assert many.sd < few.sd

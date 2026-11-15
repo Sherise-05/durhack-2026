@@ -17,7 +17,10 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 
+from app.time_utils import add_elapsed, instant
+
 from app.schemas import (
+    AgeBand,
     AlertnessPoint,
     BedtimeRecommendation,
     CalendarEvent,
@@ -26,6 +29,7 @@ from app.schemas import (
     Mode,
     Snapshot,
     UserData,
+    UserProfile,
     WhatIf,
 )
 from app.services import learning
@@ -68,24 +72,29 @@ def night_of(now: datetime) -> date:
 
 
 def _floor5(dt: datetime) -> datetime:
-    return dt.replace(second=0, microsecond=0) - timedelta(minutes=dt.minute % 5)
+    return dt.replace(minute=dt.minute - dt.minute % 5, second=0, microsecond=0)
 
 
 def _ceil5(dt: datetime) -> datetime:
     floored = _floor5(dt)
-    return floored if floored == dt else floored + timedelta(minutes=5)
+    return floored if floored == dt else add_elapsed(floored, timedelta(minutes=5))
 
 
-def first_commitment(events: list[CalendarEvent], morning: date) -> CalendarEvent | None:
+def first_commitment(
+    events: list[CalendarEvent], morning: date, profile: UserProfile | None = None
+) -> CalendarEvent | None:
     todays = [
         e for e in events
-        if e.start.date() == morning and e.start.time() >= time(4) and e.category != EventCategory.REST
+        if e.start.date() == morning and e.category != EventCategory.REST
     ]
-    return min(todays, key=lambda e: e.start) if todays else None
+    return min(
+        todays,
+        key=lambda e: instant(add_elapsed(e.start, -timedelta(minutes=lead_min(profile, e)))) if profile else instant(e.start),
+    ) if todays else None
 
 
 def caffeine_cutoffs(bedtime: datetime) -> dict[str, datetime]:
-    return {drink: bedtime - timedelta(hours=h) for drink, h in CAFFEINE_CUTOFF_H.items()}
+    return {drink: add_elapsed(bedtime, -timedelta(hours=h)) for drink, h in CAFFEINE_CUTOFF_H.items()}
 
 
 # --------------------------------------------------------------------------- dashboard
@@ -96,6 +105,13 @@ def snapshot(data: UserData, now: datetime, model: PersonModel | None = None) ->
     mode, reason = effective_mode(data, now)
     last = model.last_night
     hrv_z, hrv_pct = model.hrv if model.hrv else (None, None)
+    tips = list(MODES[mode].tips)
+    if data.profile.age_band == AgeBand.TEEN:
+        adult_tip = MODES[Mode.NORMAL].tips[0]
+        teen_tip = "Aim for 8-10 hours of sleep each day (AASM guidance for teenagers)."
+        tips = [teen_tip if tip == adult_tip else tip for tip in tips]
+        if teen_tip not in tips:
+            tips.insert(0, teen_tip)
     return Snapshot(
         now=now,
         mode=mode,
@@ -108,7 +124,7 @@ def snapshot(data: UserData, now: datetime, model: PersonModel | None = None) ->
         hrv_vs_baseline_pct=hrv_pct,
         social_jet_lag_h=social_jet_lag_h(data, now),
         day_strain=day_strain(data.events, now.date()),
-        tips=list(MODES[mode].tips) + life_stage_tips(data.profile),
+        tips=tips + life_stage_tips(data.profile),
         gp_card=gp_card(data, now),
     )
 
@@ -118,9 +134,14 @@ def day_curve(data: UserData, now: datetime, model: PersonModel | None = None) -
     planned bedtime (the gap at the end is the planned sleep)."""
     model = model or PersonModel(data, now)
     night = recommend_bedtime(data, now, model)
-    woke = model.state.woke_at or now - timedelta(hours=4)
-    tonight = SleepBlock(night.bedtime, night.alarm, model.efficiency)
-    return model.curve(woke, night.bedtime + timedelta(hours=1), extra=[tonight])
+    woke = max(
+        (block.end for block in model.blocks if not block.is_nap and instant(block.end) <= instant(now)),
+        default=model.origin.at,
+        key=instant,
+    )
+    extra = [SleepBlock(night.bedtime, night.alarm, model.efficiency)] if night.feasible else []
+    end = max(now + timedelta(hours=1), night.bedtime + timedelta(hours=1))
+    return model.curve(woke, end, extra=extra)
 
 
 # --------------------------------------------------------------------------- tonight
@@ -158,27 +179,27 @@ def recommend_bedtime(
         usual_alarm = datetime.combine(morning, exam_wake_time(data, now))
     else:
         usual_alarm = datetime.combine(morning, p.usual_wake) + timedelta(hours=settings.lie_in_h)
-    event = first_commitment(data.events, morning)
+    event = first_commitment(data.events, morning, p)
     alarm = usual_alarm
     if event is not None:
         lead = lead_min(p, event)
-        needed = event.start - timedelta(minutes=lead)
-        if needed < alarm:
+        needed = add_elapsed(event.start, -timedelta(minutes=lead))
+        if instant(needed) < instant(alarm):
             alarm = needed
             why = (
-                "get ready, travel and let the ~20 min of grogginess wear off"
+                "get ready, travel and allow a 20 min grogginess buffer (recovery can take longer)"
                 if event.category in (EventCategory.EXAM, EventCategory.TRAVEL)
                 else "get ready and get there"
             )
             reasons.append(
-                f"First up tomorrow: {event.title} at {event.start:%H:%M}. The alarm leaves {lead} min to {why}."
+                f"Tomorrow's limiting commitment: {event.title} at {event.start:%H:%M}. The alarm leaves {lead} min to {why}."
             )
         else:
-            reasons.append(f"First up tomorrow: {event.title} at {event.start:%H:%M}, with time to spare.")
+            reasons.append(f"Tomorrow's limiting commitment: {event.title} at {event.start:%H:%M}, with time to spare.")
     if mode == Mode.EXAM and alarm == usual_alarm and plan_night is None:
         reasons.append(
-            f"Exam mode keeps the same {alarm:%H:%M} alarm every day, so your body clock is "
-            "already there on exam morning (regular sleepers got better grades: Phillips et al. 2017)."
+            f"Exam mode keeps the same {alarm:%H:%M} alarm every day to support a steadier schedule "
+            "(regular sleepers had better grades: Phillips et al. 2017)."
         )
     elif event is None and plan_night is None:
         reasons.append(
@@ -188,7 +209,7 @@ def recommend_bedtime(
     alarm = _floor5(alarm)
 
     # 2. How much sleep tonight
-    bedtime = _floor5(alarm - timedelta(hours=in_bed_h))
+    bedtime = _floor5(add_elapsed(alarm, -timedelta(hours=in_bed_h)))
     if model.personal.need.n >= 3:
         reasons.append(
             f"Doze has learned you need about {fmt_h(need)} "
@@ -207,16 +228,16 @@ def recommend_bedtime(
     # 3. Body clock: there's no point planning lights-out hours before you can fall
     # asleep, so debt repayment gives way to it, but never below the minimum (§1, §4).
     mid = model.phys.mid_sleep_h
-    natural = datetime.combine(night, time(12)) + timedelta(hours=(mid - 12) % 24 - need / 2)
+    natural = datetime.combine(night, time(12)) + timedelta(hours=(mid - 12) % 24 - (need / model.efficiency) / 2)
     body_clock_earliest = _floor5(natural - timedelta(hours=BODY_CLOCK_SLACK_H))
-    latest_for_minimum = _floor5(alarm - timedelta(hours=minimum / model.efficiency))
-    if bedtime < body_clock_earliest:
-        bedtime = min(body_clock_earliest, latest_for_minimum)
+    latest_for_minimum = _floor5(add_elapsed(alarm, -timedelta(hours=minimum / model.efficiency)))
+    if instant(bedtime) < instant(body_clock_earliest):
+        bedtime = min(body_clock_earliest, latest_for_minimum, key=instant)
         reasons.append(
             f"Your body clock is unlikely to let you sleep much before {body_clock_earliest:%H:%M}, "
             "so tonight's catch-up is trimmed to fit."
         )
-    if bedtime < body_clock_earliest:
+    if instant(bedtime) < instant(body_clock_earliest):
         warnings.append(
             f"Your body clock may not feel sleepy until about {body_clock_earliest:%H:%M}. "
             "Get daylight soon after waking to shift it earlier."
@@ -224,15 +245,27 @@ def recommend_bedtime(
 
     # 4. Rules and reality checks
     if settings.latest_bedtime is not None:
-        bedtime = min(bedtime, datetime.combine(morning, settings.latest_bedtime))
-    earliest = _ceil5(now + timedelta(minutes=10))
-    if bedtime < earliest:
+        bedtime = min(bedtime, datetime.combine(morning, settings.latest_bedtime), key=instant)
+    earliest = _ceil5(add_elapsed(now, timedelta(minutes=10)))
+    if instant(bedtime) < instant(earliest):
         bedtime = earliest
-    clashes = [e for e in data.events if e.category != EventCategory.REST and e.start < bedtime < e.end]
-    if clashes:
-        last = max(clashes, key=lambda e: e.end)
-        bedtime = _ceil5(last.end + timedelta(minutes=last.travel_min + HOME_SETTLE_MIN))
+    while instant(bedtime) < instant(alarm):
+        clashes = [
+            e for e in data.events
+            if e.category != EventCategory.REST
+            and instant(add_elapsed(e.start, -timedelta(minutes=e.travel_min))) < instant(alarm)
+            and instant(add_elapsed(e.end, timedelta(minutes=e.travel_min + HOME_SETTLE_MIN))) > instant(bedtime)
+        ]
+        if not clashes:
+            break
+        last = max(clashes, key=lambda e: instant(add_elapsed(e.end, timedelta(minutes=e.travel_min + HOME_SETTLE_MIN))))
+        bedtime = _ceil5(add_elapsed(last.end, timedelta(minutes=last.travel_min + HOME_SETTLE_MIN)))
         reasons.append(f"{last.title} runs until {last.end:%H:%M}, so lights out moves to {bedtime:%H:%M}.")
+    if instant(bedtime) >= instant(alarm):
+        warnings.append("No sleep window remains before the required alarm; these calendar constraints cannot fit a night of sleep.")
+        if instant(alarm) <= instant(now):
+            warnings.append(f"The required {alarm:%H:%M} alarm deadline has already passed; check the upcoming commitment and its travel time.")
+    feasible = instant(bedtime) < instant(alarm)
     sleep_h = max(0.0, hours_between(bedtime, alarm) * model.efficiency)
     if sleep_h < minimum - 0.05:
         warnings.append(
@@ -241,8 +274,8 @@ def recommend_bedtime(
         )
     if mode == Mode.EXAM and bedtime > datetime.combine(morning, EXAM_LATEST_BEDTIME):
         warnings.append(
-            "It's past 2 a.m., the latest bedtime exam mode plans for: later bedtimes were linked "
-            "to worse test scores even with the same total sleep (Okano et al. 2019)."
+            "It's past 2 a.m., exam mode's chosen planning limit. Later bedtimes were associated "
+            "with lower grades in one student cohort (Okano et al. 2019); this is not a universal cutoff."
         )
     evening = datetime.combine(night, time(18))
     for e in data.events:
@@ -263,7 +296,7 @@ def recommend_bedtime(
             "climb steadily after ~16 h awake (Van Dongen et al. 2003)."
         )
 
-    wind_down = bedtime - timedelta(minutes=settings.wind_down_min)
+    wind_down = add_elapsed(bedtime, -timedelta(minutes=settings.wind_down_min))
     reasons.append(f"Wind down from {wind_down:%H:%M}: screens down or dimmed, lights low.")
     cycles = sleep_h * 60 / CYCLE_MIN
     reasons.append(f"That's about {fmt_h(sleep_h)} asleep, roughly {cycles:.0f} sleep cycles.")
@@ -271,7 +304,8 @@ def recommend_bedtime(
         wind_down=wind_down, bedtime=bedtime, alarm=alarm, sleep_h=round(sleep_h, 2),
         need_h=round(need, 2), debt_h=model.debt_h, cycles=round(cycles, 1),
         first_event=event.title if event else None,
-        headline=f"Lights out {bedtime:%H:%M}, alarm {alarm:%H:%M}",
+        feasible=feasible,
+        headline=f"Lights out {bedtime:%H:%M}, alarm {alarm:%H:%M}" if feasible else "No sleep window before the required alarm",
         reasons=reasons, warnings=warnings,
     )
 
@@ -283,33 +317,48 @@ def what_if_bedtime(
     data: UserData, now: datetime, bedtime: datetime, alarm: datetime, model: PersonModel | None = None
 ) -> WhatIf:
     """'If I sleep from bedtime to alarm, how sharp will I be tomorrow?'"""
+    if instant(bedtime) < instant(now):
+        raise ValueError("what-if bedtime must not be before now")
+    if instant(alarm) < instant(bedtime):
+        raise ValueError("what-if alarm must not be before bedtime")
     model = model or PersonModel(data, now)
     mode, _ = effective_mode(data, now)
     minimum, _ = learning.need_range_h(data.profile)
-    asleep = bedtime < alarm
+    asleep = instant(bedtime) < instant(alarm)
     blocks = [SleepBlock(bedtime, alarm, model.efficiency)] if asleep else []
     sleep_h = hours_between(bedtime, alarm) * model.efficiency if asleep else 0.0
-    wake = max(alarm, bedtime)
-    curve = model.curve(wake, wake + timedelta(hours=16), extra=blocks)
+    wake = max(alarm, bedtime, key=instant)
+    horizon = add_elapsed(wake, timedelta(hours=16))
+    curve = model.curve(wake, horizon, extra=blocks, replace_future=True)
     forecasts = []
-    for e in sorted(data.events, key=lambda e: e.start):
-        if e.start.date() != wake.date() or e.start < wake:
+    warnings = []
+    for e in sorted(data.events, key=lambda e: instant(e.start)):
+        if e.category == EventCategory.REST:
             continue
-        during = [pt.alertness for pt in curve if e.start <= pt.at <= e.end and pt.alertness is not None]
+        if asleep and instant(e.start) < instant(alarm) and instant(e.end) > instant(bedtime):
+            warnings.append(f"Your proposed sleep overlaps {e.title} ({e.start:%H:%M}-{e.end:%H:%M}).")
+        if instant(e.end) <= instant(wake) or instant(e.start) >= instant(horizon):
+            continue
+        event_start, event_end = max(e.start, wake, key=instant), min(e.end, horizon, key=instant)
+        # Event forecasts have their own sample grid. A ten-minute appointment
+        # must not disappear merely because the display uses 15-minute points.
+        event_curve = model.curve(
+            event_start, event_end, extra=blocks, step_min=1, replace_future=True,
+        )
+        during = [pt.alertness for pt in event_curve if pt.alertness is not None]
         if during:
             forecasts.append(EventForecast(title=e.title, start=e.start, alertness=round(sum(during) / len(during), 1)))
 
-    warnings = []
     if sleep_h < 1:
         warnings.append(
-            "That's an all-nighter, and Doze won't plan one: after 35 h awake students remembered new "
-            "material 19-40 % worse (Yoo et al. 2007), and regular all-nighters are linked to lower GPAs."
+            "That's effectively an all-nighter and leaves almost no sleep. Sleep deprivation can impair learning and memory "
+            "(Yoo et al. 2007); Doze recommends making time for sleep."
         )
     elif sleep_h < minimum - 0.05:
         warnings.append(f"That's about {fmt_h(sleep_h)} of sleep, under the {minimum:g} h minimum.")
     if mode == Mode.EXAM and asleep and bedtime > datetime.combine(alarm.date(), EXAM_LATEST_BEDTIME):
         warnings.append(
-            "Bedtimes after ~2 a.m. were linked to worse test scores even with the same total sleep "
+            "Exam mode uses a 2 a.m. planning limit, informed by an observational study of later bedtimes and grades "
             "(Okano et al. 2019)."
         )
     return WhatIf(bedtime=bedtime, alarm=alarm, sleep_h=round(sleep_h, 2), curve=curve, events=forecasts, warnings=warnings)

@@ -30,14 +30,15 @@ from app.schemas import (
     UserData,
     UserProfile,
 )
+from app.time_utils import instant
 from app.services import learning
 from app.services.sleep_model import (
     JET_LAG_MIN_H,
-    PRE_TRIP_DAYS,
     PRE_TRIP_H_PER_DAY,
     adjust_rate_h_per_day,
     fmt_h,
     nights,
+    pre_trip_nights,
     pre_trip_shift_h,
     time_zone_shift_h,
 )
@@ -91,9 +92,9 @@ MODES: dict[Mode, ModeSettings] = {
         event_weights={**_WEIGHTS, EventCategory.EXAM: 3.0, EventCategory.STUDY: 1.6},
         tips=(
             "The sleep that counts is across the revision weeks, not just the night before (Okano et al. 2019).",
-            "Same wake time every day: students with regular sleep got better grades (Phillips et al. 2017).",
-            "Bed before 2 a.m.: later bedtimes were linked to worse test scores, even with the same total sleep.",
-            "No all-nighters: after 35 h awake, students remembered new material 19-40 % worse (Yoo et al. 2007).",
+            "Same wake time every day: students with regular sleep had better grades (Phillips et al. 2017).",
+            "Exam mode aims for bed before 2 a.m., a planning choice informed by an observational student study, not a universal cutoff.",
+            "Avoid all-nighters: sleep deprivation can impair learning and memory (Yoo et al. 2007).",
         ),
     ),
     Mode.HOLIDAY: ModeSettings(
@@ -101,7 +102,7 @@ MODES: dict[Mode, ModeSettings] = {
         max_extra_sleep_h=1.5,
         tips=(
             "Lie-ins are fine, but keep your alarm within about an hour of term time.",
-            "Big lie-ins don't repay a week of short nights: consistency matters (Depner et al. 2019).",
+            "Weekend catch-up sleep may not undo all the effects of repeated short nights; regular sufficient sleep matters (Depner et al. 2019).",
             "Before term starts, Doze moves your wake time back gradually, not all at once.",
         ),
     ),
@@ -110,7 +111,7 @@ MODES: dict[Mode, ModeSettings] = {
         max_extra_sleep_h=1.0,
         tips=(
             "Flying west is easier (it lengthens your day); east is harder.",
-            "Get morning light after flying east and evening light after flying west; an outdoor walk combines light and movement.",
+            "Light timing depends on your current body-clock phase. While adjusting, use personalised light timing rather than a fixed local morning or evening window.",
             "Thinking about melatonin? Ask a pharmacist or GP: Doze doesn't give medication advice.",
         ),
     ),
@@ -133,8 +134,8 @@ def life_stage_tips(profile: UserProfile) -> list[str]:
 def upcoming_exams(events: list[CalendarEvent], now: datetime) -> list[CalendarEvent]:
     horizon = now + timedelta(days=EXAM_LOOKAHEAD_DAYS)
     return sorted(
-        (e for e in events if e.category == EventCategory.EXAM and now <= e.start <= horizon),
-        key=lambda e: e.start,
+        (e for e in events if e.category == EventCategory.EXAM and instant(now) <= instant(e.start) <= instant(horizon)),
+        key=lambda e: instant(e.start),
     )
 
 
@@ -225,12 +226,13 @@ def jet_lag_plan(data: UserData, today: date, in_bed_h: float | None = None) -> 
 
     direction = "advance" if east else "delay"
     sign = -1 if east else 1  # east: bedtimes move earlier
-    # Only the pre-trip nights still ahead count: starting late never means a 3 h jump.
-    pre_nights = [travel.departure.date() - timedelta(days=k) for k in range(PRE_TRIP_DAYS, 0, -1)]
-    pre_nights = [d for d in pre_nights if d >= today]
-    pre = min(pre_trip_shift_h(shift), PRE_TRIP_H_PER_DAY * len(pre_nights))
+    # Keep completed nights in the count, but only display remaining ones.
+    pre_nights = pre_trip_nights(travel)
+    pre = pre_trip_shift_h(travel)
     days: list[ShiftDay] = []
     for i, day in enumerate(pre_nights, start=1):
+        if day < today:
+            continue
         moved = min(pre, PRE_TRIP_H_PER_DAY * i)
         wake = _shift(p.usual_wake, sign * moved)
         bed = _shift(wake, -in_bed)
@@ -248,12 +250,17 @@ def jet_lag_plan(data: UserData, today: date, in_bed_h: float | None = None) -> 
     local_bed = _shift(p.usual_wake, -in_bed)
     for j in range(n + 1):
         off = max(0.0, left - rate * j)
-        light, window = _light(east, local_bed, p.usual_wake) if off > 0 else (None, None)
+        # Target local wake time is not biological wake time while lag remains.
+        # Without a phase-aware algorithm, even a small residual lag can put a
+        # fixed local window on the wrong side of the circadian nadir.
+        light, window = None, None
         note = (
             "Arrival day: stay up until local bedtime; a 10-20 min nap before 3 p.m. if you must."
             if j == 0 else "Body clock back in sync: enjoy your trip." if off == 0
             else f"Body clock ~{fmt_h(off)} {'behind' if east else 'ahead'}; keep to local times."
         )
+        if off > 0:
+            note += " While your body clock is adjusting, use personalised light timing before seeking bright light at a specific time."
         days.append(ShiftDay(
             day=travel.arrival.date() + timedelta(days=j), where="destination",
             bedtime=local_bed, wake=p.usual_wake, light=light, seek_light=window,
@@ -262,8 +269,9 @@ def jet_lag_plan(data: UserData, today: date, in_bed_h: float | None = None) -> 
     slower = " (east is slower)" if east else ""
     return ShiftPlan(
         kind="jet_lag", direction=direction, shift_h=size, days_to_adjust=n,
-        summary=f"{away} is {rel}. Shift {pre:g} h over the {PRE_TRIP_DAYS} days before you fly, "
-        f"then allow about {n} days to adjust after landing{slower}.",
+        summary=f"{away} is {rel}. Plan a {pre:g} h shift over {len(pre_nights)} preparation nights, "
+        f"then allow about {n} days to adjust after landing{slower}. "
+        "This estimate assumes the preparation plan is followed; actual adjustment and optimal light timing vary.",
         days=days, tips=tips,
     )
 
@@ -275,8 +283,11 @@ def back_to_term_plan(data: UserData, now: datetime, in_bed_h: float | None = No
     recent = nights(data.sessions, now)[-7:]
     if p.term_starts is None or not recent:
         return None
-    current = median(learning.mid_sleep_since_noon(s.start, s.end) for s in recent)
-    late = round(current - learning.usual_mid_since_noon(p), 2)
+    # The output promises changes to the alarm, so measure wake-time drift.
+    # Midpoint drift differs when recent and usual sleep durations differ.
+    reference = learning.since_noon_h(p.usual_wake)
+    current = median(learning.unwrap_hours(learning.since_noon_h(s.end), reference) for s in recent)
+    late = round(current - reference, 2)
     if late <= 0.25:
         return ShiftPlan(
             kind="back_to_term", direction="none", shift_h=max(late, 0.0), days_to_adjust=0,
@@ -301,11 +312,13 @@ def back_to_term_plan(data: UserData, now: datetime, in_bed_h: float | None = No
         d += timedelta(days=1)
     short = days[-1].body_clock_off_h if days else late
     summary = (
-        f"You're sleeping about {fmt_h(late)} later than term time. Doze moves your wake time back "
-        f"30 min a day from {start:%a %d %b}, so you're on {p.usual_wake:%H:%M} by {p.term_starts:%a %d %b}."
+        f"You're waking about {fmt_h(late)} later than term time. Doze moves your wake time back "
+        f"by up to 30 min a day from {start:%a %d %b}."
     )
     if short > 0:
         summary += f" Start today: you'll still be ~{fmt_h(short)} late on the first day."
+    else:
+        summary += f" You're on {p.usual_wake:%H:%M} by {p.term_starts:%a %d %b}."
     return ShiftPlan(
         kind="back_to_term", direction="advance", shift_h=late, days_to_adjust=needed,
         summary=summary, days=days, tips=list(MODES[Mode.HOLIDAY].tips),

@@ -14,9 +14,9 @@ model (Åkerstedt & Folkard):
   afternoon dip (~1-3 pm for most people) and the evening second wind. It runs
   on clock time, phased by your body-clock belief (learning.py). After a flight
   it moves ~1 h/day towards local time, slower going east (Brief §4, §6).
-* **Process W, sleep inertia.** Grogginess after waking that fades over ~20 min
-  (Brief §3), much stronger if you wake from deep sleep. That's why naps are
-  10 or 20 min, or a whole ~90 min cycle, and never 30-60.
+* **Process W, sleep inertia.** Grogginess after waking, with a chosen 20 min decay constant
+  (Brief §3), stronger in our heuristic if you wake from deep sleep. Actual recovery and
+  sleep-stage timing vary; our nap options are product rules, not guarantees.
 * **Nap boost.** The short-term lift from a nap, fading over ~2.5 h (Brooks &
   Lack 2006 saw benefits lasting 125-155 min).
 
@@ -37,7 +37,7 @@ always pass ``now``.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from statistics import median, pstdev
 from zoneinfo import ZoneInfo
@@ -53,8 +53,10 @@ from app.schemas import (
     SleepSession,
     TravelPlan,
     UserData,
+    normalise_sessions,
 )
 from app.services import learning
+from app.time_utils import add_elapsed, hours_between, instant
 
 # Process S
 TAU_RISE_H = 18.2
@@ -73,7 +75,7 @@ K_PRESSURE = 85.0
 
 # Process W: sleep inertia
 INERTIA_POINTS = 30.0
-INERTIA_TAU_H = 1 / 3  # ~20 min
+INERTIA_TAU_H = 1 / 3  # chosen 20 min exponential constant; 37% remains after 20 min
 
 # Nap boost
 NAP_BOOST_POINTS = 8.0
@@ -102,10 +104,6 @@ def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, x))
 
 
-def hours_between(a: datetime, b: datetime) -> float:
-    return (b - a).total_seconds() / 3600
-
-
 def fmt_h(hours: float) -> str:
     """2.67 -> '2h 40m', 0.17 -> '10m'."""
     total = max(0, round(hours * 60))
@@ -119,7 +117,10 @@ def clock_h(t: datetime) -> float:
 
 def nights(sessions: list[SleepSession], now: datetime) -> list[SleepSession]:
     """Night sleeps (not naps) that had ended by ``now``, oldest first."""
-    return sorted((s for s in sessions if not s.is_nap and s.end <= now), key=lambda s: s.end)
+    return sorted(
+        (s for s in normalise_sessions(sessions) if not s.is_nap and instant(s.end) <= instant(now)),
+        key=lambda s: instant(s.end),
+    )
 
 
 # --------------------------------------------------------------------------- the processes
@@ -134,7 +135,7 @@ def pressure_asleep(s0: float, hours: float, efficiency: float = 1.0) -> float:
 
 
 def circadian(clock: float, mid_sleep: float) -> float:
-    """Body-clock alertness drive, about -1.5 (night) to +1.5 (evening peak)."""
+    """Body-clock alertness drive, about -1.36 (night) to +1.23 (evening peak)."""
     x = clock - mid_sleep
     return math.cos(2 * math.pi * (x - CIRCADIAN_PEAK_H) / 24) - HARMONIC * math.cos(
         4 * math.pi * (x - AFTERNOON_DIP_H) / 24
@@ -142,7 +143,7 @@ def circadian(clock: float, mid_sleep: float) -> float:
 
 
 def deep_sleep_chance(minutes_asleep: float, pressure: float) -> float:
-    """How likely you are to be in deep sleep this many minutes after falling asleep.
+    """Heuristic depth proxy, not a calibrated sleep-stage probability.
 
     Deep sleep peaks ~40 min in (sooner when you're short of sleep) and again,
     less strongly, one ~90 min cycle later.
@@ -168,6 +169,12 @@ class SleepBlock:
     end: datetime  # awake at
     efficiency: float = TYPICAL_EFFICIENCY
     is_nap: bool = False
+
+    def __post_init__(self):
+        if not 0 < hours_between(self.start, self.end) <= 24:
+            raise ValueError("a sleep block must last more than zero and at most 24 hours")
+        if not math.isfinite(self.efficiency) or not 0 <= self.efficiency <= 1:
+            raise ValueError("sleep efficiency must be between 0 and 1")
 
     @property
     def minutes_asleep(self) -> float:
@@ -196,12 +203,39 @@ class Physiology:
 
 
 def blocks_from_sessions(sessions: list[SleepSession]) -> list[SleepBlock]:
-    out: list[SleepBlock] = []
-    for s in sorted(sessions, key=lambda s: s.start):
-        start = s.start if not out else max(s.start, out[-1].end)  # ignore overlaps
-        if start < s.end:
-            out.append(SleepBlock(start, s.end, s.efficiency, s.is_nap))
-    return out
+    return [SleepBlock(s.start, s.end, s.efficiency, s.is_nap) for s in normalise_sessions(sessions)]
+
+
+def _ordered_blocks(blocks: list[SleepBlock]) -> list[SleepBlock]:
+    """Require one unambiguous sleep timeline, ordered by actual instants."""
+    ordered = sorted(blocks, key=lambda b: instant(b.start))
+    for previous, current in zip(ordered, ordered[1:]):
+        if instant(current.start) < instant(previous.end):
+            raise ValueError("sleep blocks overlap; choose observed or hypothetical sleep explicitly")
+    return ordered
+
+
+def _observed_over_inferred(
+    inferred: list[SleepBlock], observed: list[SleepBlock]
+) -> list[SleepBlock]:
+    """Retain inferred sleep only where no real record covers the interval."""
+    observed = _ordered_blocks(observed)
+    remaining: list[SleepBlock] = []
+    for block in inferred:
+        cursor = block.start
+        for actual in observed:
+            if instant(actual.end) <= instant(cursor):
+                continue
+            if instant(actual.start) >= instant(block.end):
+                break
+            if instant(actual.start) > instant(cursor):
+                remaining.append(replace(block, start=cursor, end=actual.start))
+            cursor = max(cursor, actual.end, key=instant)
+            if instant(cursor) >= instant(block.end):
+                break
+        if instant(cursor) < instant(block.end):
+            remaining.append(replace(block, start=cursor))
+    return _ordered_blocks(remaining + observed)
 
 
 def _wake_depth(block: SleepBlock, onset_pressure: float, end_pressure: float) -> float:
@@ -212,20 +246,22 @@ def _wake_depth(block: SleepBlock, onset_pressure: float, end_pressure: float) -
 
 def advance(state: BodyState, blocks: list[SleepBlock], until: datetime) -> BodyState:
     """Play the model forward from ``state`` to ``until`` through sorted sleep blocks."""
+    if instant(until) < instant(state.at):
+        raise ValueError("simulation times must run forward")
     s, t = state.pressure, state.at
     woke_at, depth, boost, boost_at = state.woke_at, state.wake_depth, state.boost, state.boost_at
     asleep = False
     for b in blocks:
-        if b.end <= t:
+        if instant(b.end) <= instant(t):
             continue
-        if b.start >= until:
+        if instant(b.start) > instant(until):
             break
-        start = max(b.start, t)
+        start = max(b.start, t, key=instant)
         s = pressure_awake(s, hours_between(t, start))
-        stop = min(b.end, until)
+        stop = min(b.end, until, key=instant)
         s = pressure_asleep(s, hours_between(start, stop), b.efficiency)
         t = stop
-        if b.end > until:
+        if instant(b.end) > instant(until):
             asleep = True
             break
         onset = s / math.exp(-hours_between(b.start, b.end) * b.efficiency / TAU_DECAY_H)
@@ -259,7 +295,7 @@ def alertness(state: BodyState, phys: Physiology) -> float | None:
 
 
 def simulate(state: BodyState, blocks: list[SleepBlock], times: list[datetime]) -> list[BodyState]:
-    blocks = sorted(blocks, key=lambda b: b.start)
+    blocks = _ordered_blocks(blocks)
     out = []
     for t in times:
         state = advance(state, blocks, t)
@@ -268,8 +304,12 @@ def simulate(state: BodyState, blocks: list[SleepBlock], times: list[datetime]) 
 
 
 def time_grid(start: datetime, end: datetime, step_min: int = 15) -> list[datetime]:
+    if step_min <= 0:
+        raise ValueError("step_min must be positive")
+    if instant(end) < instant(start):
+        return []
     n = max(0, int(hours_between(start, end) * 60 // step_min))
-    return [start + timedelta(minutes=step_min * i) for i in range(n + 1)]
+    return [add_elapsed(start, timedelta(minutes=step_min * i)) for i in range(n + 1)]
 
 
 # --------------------------------------------------------------------------- body clock & travel
@@ -288,21 +328,31 @@ def adjust_rate_h_per_day(shift_h: float, age_band: AgeBand) -> float:
     return rate * (OLDER_JET_LAG_FACTOR if age_band == AgeBand.OLDER else 1.0)
 
 
-def pre_trip_shift_h(shift_h: float) -> float:
-    """How much of the shift the 3-day pre-trip plan covers (only for 3+ h)."""
+def pre_trip_nights(travel: TravelPlan) -> list[date]:
+    """Available preparation nights, counted from creation rather than today."""
+    first = travel.departure.date() - timedelta(days=PRE_TRIP_DAYS)
+    if travel.planned_from is not None:
+        first = max(first, travel.planned_from)
+    return [first + timedelta(days=i) for i in range((travel.departure.date() - first).days)]
+
+
+def pre_trip_shift_h(travel: TravelPlan) -> float:
+    """Assumed shift if the available preparation plan is followed."""
+    shift_h = time_zone_shift_h(travel)
     if abs(shift_h) < JET_LAG_MIN_H:
         return 0.0
-    return min(abs(shift_h), PRE_TRIP_DAYS * PRE_TRIP_H_PER_DAY)
+    return min(abs(shift_h), len(pre_trip_nights(travel)) * PRE_TRIP_H_PER_DAY)
 
 
 def pre_trip_progress_h(travel: TravelPlan, when: datetime) -> float:
     """How far the pre-trip plan has moved the body clock by ``when`` (home time),
-    assuming it's followed: 1 h a day over the 3 days before departure."""
-    total = pre_trip_shift_h(time_zone_shift_h(travel))
-    if when >= travel.departure:
+    assuming it's followed: 1 h a day over the available preparation nights."""
+    total = pre_trip_shift_h(travel)
+    pre_nights = pre_trip_nights(travel)
+    if when >= travel.departure or not pre_nights:
         return total
-    start = datetime.combine(travel.departure.date() - timedelta(days=PRE_TRIP_DAYS), time(12))
-    return _clamp(hours_between(start, when) / 24 * PRE_TRIP_H_PER_DAY, 0.0, total)
+    start = datetime.combine(pre_nights[0], time(12))
+    return _clamp(hours_between(start, when, zone=travel.home_tz) / 24 * PRE_TRIP_H_PER_DAY, 0.0, total)
 
 
 def jet_lag_remaining_h(travel: TravelPlan, age_band: AgeBand, when: datetime) -> float:
@@ -310,8 +360,8 @@ def jet_lag_remaining_h(travel: TravelPlan, age_band: AgeBand, when: datetime) -
     if when < travel.arrival:
         return 0.0
     shift = time_zone_shift_h(travel)
-    left = abs(shift) - pre_trip_shift_h(shift)
-    days = hours_between(travel.arrival, when) / 24
+    left = abs(shift) - pre_trip_shift_h(travel)
+    days = hours_between(travel.arrival, when, zone=travel.destination_tz) / 24
     return max(0.0, left - adjust_rate_h_per_day(shift, age_band) * days)
 
 
@@ -332,10 +382,11 @@ def social_jet_lag_h(data: UserData, now: datetime) -> float | None:
     """This week's social jet lag: the gap between your sleep midpoint on free days
     and on work days (Roenneberg; Brief §7). In holiday mode every day is free, so
     it's the gap between your holiday midpoint and your term-time one."""
-    recent = [s for s in nights(data.sessions, now) if s.end >= now - timedelta(days=7)]
+    recent = [s for s in nights(data.sessions, now) if hours_between(s.end, now) <= 7 * 24]
     if not recent:
         return None
-    mids = [(learning.mid_sleep_since_noon(s.start, s.end), s.end.weekday() >= 5) for s in recent]
+    reference = learning.usual_mid_since_noon(data.profile)
+    mids = [(learning.unwrap_hours(learning.mid_sleep_since_noon(s.start, s.end), reference), s.end.weekday() >= 5) for s in recent]
     if data.profile.mode == Mode.HOLIDAY:
         gap = median(m for m, _ in mids) - learning.usual_mid_since_noon(data.profile)
         return round(abs(gap), 2)
@@ -350,29 +401,32 @@ def social_jet_lag_h(data: UserData, now: datetime) -> float | None:
 
 
 def sleep_debt_h(sessions: list[SleepSession], need_h: float, now: datetime) -> float:
-    """Running sleep debt over the last 14 nights: need minus actual sleep, added up
+    """Estimated debt from logs ending in the last 14 days: need minus sleep, added up
     night by night, never below zero; naps count (Brief §2). A sleep 'day' runs
     2 p.m. to 2 p.m., so a morning nap counts towards the night before it."""
     totals: dict[date, float] = {}
     night_keys = set()
-    for s in sessions:
-        if s.end > now:
+    for s in normalise_sessions(sessions):
+        if not 0 <= hours_between(s.end, now) < DEBT_NIGHTS * 24:
             continue
         key = (s.end - timedelta(hours=14)).date()
         totals[key] = totals.get(key, 0.0) + s.hours_asleep
         if not s.is_nap:
             night_keys.add(key)
     debt = 0.0
-    for key in sorted(night_keys)[-DEBT_NIGHTS:]:
-        debt = max(0.0, debt + need_h - totals[key])
+    for key in sorted(totals):
+        # A completed nap can repay existing debt before the next night is logged.
+        # Missing night logs are unknown, not evidence of an all-nighter.
+        charge = need_h if key in night_keys else 0.0
+        debt = max(0.0, debt + charge - totals[key])
     return round(debt, 2)
 
 
 def hrv_vs_baseline(sessions: list[SleepSession], now: datetime) -> tuple[float, float] | None:
     """(z-score, % difference) of last night's HRV against your previous 7 nights.
     HRV is only ever compared with your own baseline, never with other people (Brief §9)."""
-    ns = [s for s in nights(sessions, now) if s.hrv_ms]
-    if len(ns) < 4 or now - ns[-1].end > timedelta(hours=24):
+    ns = [s for s in nights(sessions, now) if s.hrv_ms and hours_between(s.end, now) <= 8 * 24]
+    if len(ns) < 4 or hours_between(ns[-1].end, now) > 24:
         return None
     last, base = ns[-1], ns[-1 - HRV_BASELINE_NIGHTS : -1]
     logs = [math.log(s.hrv_ms) for s in base]
@@ -439,10 +493,18 @@ GP_NIGHTS = 14  # our threshold (Brief §10)
 def gp_card(data: UserData, now: datetime) -> Card | None:
     """A calm 'consider talking to your GP' card after two weeks of very poor
     check-ins (rating 1-2). Never a diagnosis, never blocking (Brief §10)."""
-    rated = [s for s in nights(data.sessions, now) if s.rating is not None][-GP_NIGHTS:]
-    if len(rated) < GP_NIGHTS or rated[0].end < now - timedelta(days=GP_NIGHTS + 1):
+    per_day: dict[date, list[SleepSession]] = {}
+    for session in nights(data.sessions, now):
+        if session.rating is not None:
+            per_day.setdefault(session.end.date(), []).append(session)
+    days = sorted(per_day)[-GP_NIGHTS:]
+    if len(days) < GP_NIGHTS:
         return None
-    if any(s.rating > 2 for s in rated):
+    if any((b - a).days != 1 for a, b in zip(days, days[1:])):
+        return None
+    rated = [s for day in days for s in per_day[day]]
+    latest = max(rated, key=lambda s: instant(s.end))
+    if hours_between(latest.end, now) > 24 or any(s.rating > 2 for s in rated):
         return None
     points = [
         "Trouble sleeping for months, habits haven't helped, or it's hard to cope with daily life (NHS).",
@@ -466,7 +528,7 @@ def gp_card(data: UserData, now: datetime) -> Card | None:
 
 
 class PersonModel:
-    """The sleep model fitted to one person at one moment. Build it once per request."""
+    """The sleep model personalised to one person at one moment. Build it once per request."""
 
     def __init__(self, data: UserData, now: datetime):
         self.data, self.now = data, now
@@ -482,24 +544,25 @@ class PersonModel:
             inertia_scale=self.personal.inertia_scale,
         )
         past = nights(data.sessions, now)
-        self.last_night = past[-1] if past and now - past[-1].end <= timedelta(hours=24) else None
+        self.last_night = past[-1] if past and hours_between(past[-1].end, now) <= 24 else None
         effs = [s.efficiency for s in past[-7:]]
         self.efficiency = _clamp(median(effs), 0.75, 0.98) if effs else TYPICAL_EFFICIENCY
-        self.blocks = blocks_from_sessions([s for s in data.sessions if s.start < now])
-        if not past or now - past[-1].end > timedelta(hours=30):
-            self.blocks = sorted(self.blocks + [self._assumed_last_night()], key=lambda b: b.start)
+        self.blocks = blocks_from_sessions([s for s in data.sessions if instant(s.start) <= instant(now)])
+        ongoing = any(instant(b.start) <= instant(now) < instant(b.end) for b in self.blocks)
+        if not ongoing and (not past or hours_between(past[-1].end, now) > 30):
+            self.blocks = _observed_over_inferred([self._assumed_last_night()], self.blocks)
         self.origin = BodyState(at=self.blocks[0].start, pressure=S_START)
         self.state = advance(self.origin, self.blocks, now)
 
     def _assumed_last_night(self) -> SleepBlock:
-        """No recent data: assume the usual schedule (so new users still get a curve)."""
+        """No recent data: infer the latest usual sleep, including sleep underway."""
         p = self.data.profile
-        wake = datetime.combine(self.now.date(), p.usual_wake)
-        if wake > self.now:
-            wake -= timedelta(days=1)
-        bed = datetime.combine(wake.date(), p.usual_bedtime)
-        if bed >= wake:
+        bed = datetime.combine(self.now.date(), p.usual_bedtime)
+        if instant(bed) > instant(self.now):
             bed -= timedelta(days=1)
+        wake = datetime.combine(bed.date(), p.usual_wake)
+        if instant(wake) <= instant(bed):
+            wake += timedelta(days=1)
         return SleepBlock(bed, wake, TYPICAL_EFFICIENCY)
 
     @property
@@ -508,8 +571,8 @@ class PersonModel:
 
     def state_at(self, when: datetime) -> BodyState:
         """Predicted state at ``when`` assuming no more sleep until then."""
-        if when >= self.now:
-            return advance(self.state, [], when)
+        if instant(when) >= instant(self.now):
+            return advance(self.state, self.blocks, when)
         return advance(self.origin, self.blocks, when)
 
     def curve(
@@ -519,11 +582,33 @@ class PersonModel:
         extra: list[SleepBlock] = (),
         step_min: int = 15,
         from_state: BodyState | None = None,
+        replace_future: bool = False,
     ) -> list[AlertnessPoint]:
-        """Alertness over time. Past points replay real history; ``extra`` adds
-        hypothetical sleep (a nap, tonight's bedtime) for what-if curves."""
+        """Replay observations, replacing future sleep when a scenario is supplied.
+
+        Existing sleep before ``now`` is retained. Hypothetical sleep defines
+        the future timeline, so a recorded future wake cannot override its alarm.
+        ``replace_future`` also supports an explicit no-more-sleep scenario.
+        """
+        blocks = self.blocks
+        if extra or replace_future:
+            if any(instant(b.start) < instant(self.now) for b in extra):
+                raise ValueError("hypothetical sleep must start at or after now")
+            blocks = []
+            for block in self.blocks:
+                if instant(block.start) >= instant(self.now):
+                    continue
+                end_of_observation = min(block.end, self.now, key=instant)
+                blocks.append(replace(block, end=end_of_observation))
+            blocks = _ordered_blocks(blocks + list(extra))
         if from_state is not None:
-            states = simulate(from_state, list(extra), time_grid(max(start, from_state.at), end, step_min))
+            states = simulate(
+                from_state, blocks,
+                time_grid(max(start, from_state.at, key=instant), end, step_min),
+            )
         else:
-            states = simulate(self.origin, self.blocks + list(extra), time_grid(start, end, step_min))
+            states = simulate(
+                self.origin, blocks,
+                time_grid(max(start, self.origin.at, key=instant), end, step_min),
+            )
         return [AlertnessPoint(at=s.at, alertness=alertness(s, self.phys)) for s in states]

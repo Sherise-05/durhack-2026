@@ -7,9 +7,10 @@ from app.schemas import AgeBand, Mode, TravelPlan
 from app.services import modes, planner
 
 
-def traveller(destination: str, age_band=AgeBand.ADULT, hours_flying: int = 12):
+def traveller(destination: str, age_band=AgeBand.ADULT, hours_flying: int = 12, added_day: int | None = None):
     travel = TravelPlan(
-        destination_tz=destination, departure=at(3, "11:00"), arrival=at(3, "11:00") + timedelta(hours=hours_flying)
+        destination_tz=destination, departure=at(3, "11:00"), arrival=at(3, "11:00") + timedelta(hours=hours_flying),
+        planned_from=None if added_day is None else at(added_day, "00:00").date(),
     )
     return user(mode=Mode.TRAVEL, travel=travel, age_band=age_band, usual_bedtime=time(23), usual_wake=time(7))
 
@@ -31,12 +32,14 @@ def test_flying_west_is_faster_and_uses_evening_light():
     assert plan.direction == "delay" and plan.shift_h == 5
     home = [d for d in plan.days if d.where == "home"]
     assert [d.wake for d in home] == [time(8), time(9), time(10)]
-    assert all(d.light == "evening" for d in plan.days if d.body_clock_off_h > 0)
+    assert all(d.light == "evening" for d in home)
+    # Destination light timing needs biological phase, not target local wake.
+    assert all(d.light is None and d.seek_light is None for d in plan.days if d.where == "destination")
     assert plan.days_to_adjust == 2  # 2 h left at 1 h/day
 
 
 def test_starting_the_pre_trip_shift_late_never_jumps_3_hours():
-    plan = modes.jet_lag_plan(traveller("America/New_York", hours_flying=8), at(2, "00:00").date())
+    plan = modes.jet_lag_plan(traveller("America/New_York", hours_flying=8, added_day=2), at(2, "00:00").date())
     home = [d for d in plan.days if d.where == "home"]
     assert [d.wake for d in home] == [time(8)]  # one night left: shift 1 h, not 3
     assert plan.days_to_adjust == 4  # the other 4 h get done after landing
@@ -73,7 +76,7 @@ def holidaymaker(term_in_days: int):
 def test_back_to_term_walks_wake_time_back_30_min_a_day():
     plan = modes.back_to_term_plan(holidaymaker(10), at(0, "12:00"))
     wakes = [d.wake.hour * 60 + d.wake.minute for d in plan.days]
-    assert plan.direction == "advance" and plan.shift_h == pytest.approx(2.5)  # mid-sleep 06:00 vs 03:30
+    assert plan.direction == "advance" and plan.shift_h == pytest.approx(3.0)  # actual wake 10:30 vs 07:30
     assert all(a - b == 30 for a, b in zip(wakes, wakes[1:]))
     assert plan.days[-1].wake == time(7, 30)  # usual (term-time) wake on the first morning of term
     assert plan.days[-1].day == at(9, "00:00").date()
@@ -87,3 +90,15 @@ def test_back_to_term_warns_when_left_too_late():
 def test_holiday_alarm_stays_within_an_hour_of_term_time():
     b = planner.recommend_bedtime(holidaymaker(30), at(0, "21:00"))
     assert b.alarm <= at(1, "08:30")  # term-time wake 07:30 + 1 h
+
+
+@pytest.mark.parametrize("added_day", [None, 1, 2, 3])
+def test_plan_and_model_agree_on_landing(added_day):
+    from app.services import sleep_model as sm
+    data = traveller("Asia/Tokyo", hours_flying=14, added_day=added_day)
+    travel = data.profile.travel
+    plan = modes.jet_lag_plan(data, travel.planned_from or at(0, "00:00").date())
+    landing = next(d for d in plan.days if d.where == "destination")
+    assert landing.body_clock_off_h == pytest.approx(
+        sm.jet_lag_remaining_h(travel, AgeBand.ADULT, travel.arrival)
+    )

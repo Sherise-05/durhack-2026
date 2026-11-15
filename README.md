@@ -19,3 +19,16 @@ Pydantic model. Use `.model_dump(mode="json")` to hand it to a template or Chart
 - **How the model works:** it's the two-process model of sleep (sleep pressure plus body clock) with sleep inertia, personalised with Bayesian updates. The rules follow the Doze Sleep Science Brief, and section numbers appear in the code comments.
 
 Run the tests with `pytest`.
+
+## Model status and integration
+
+See [the feature/science guide](docs/SCIENCE_AND_FEATURES.md) for plain-language explanations, sources and limitations. Scores are research-informed estimates, not clinically validated measurements. [The brain review](docs/BRAIN_REVIEW.md) records the repaired regressions.
+
+- Create a real trip with `planned_from` set to its creation date in home-local time; persist that value and preserve it on edits. `None` means the legacy/demo full-preparation assumption.
+- Sleep records with identical start/end instants are upserted (last wins). Conflicting overlaps and sessions longer than 24 hours are rejected; reconcile source records before ingestion.
+- Travel datetimes preserve home/destination wall clocks. Sleep/calendar naive inputs explicitly use Europe/London; elapsed durations use instants and JSON timestamps include offsets to preserve DST folds. Add an explicit per-user timezone contract before supporting local schedules worldwide.
+- Routes, templates and the database service are placeholders in this repository.
+
+Use the existing environment: `venv/bin/python -m pytest -q`.
+
+QA repairs: `BedtimeRecommendation.feasible` explicitly marks impossible sleep windows; dashboard curves still render. Hypothetical sleep replaces future recorded sleep while preserving past observations. Precise destination light windows are withheld until phase-aware timing is implemented. See [the QA repair record](docs/QA_REVIEW.md).

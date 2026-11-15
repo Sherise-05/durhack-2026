@@ -17,6 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from app.schemas import CalendarEvent, SleepSession, TravelPlan, UserData, UserProfile
+from app.time_utils import instant, local_datetime
 
 PERSONAS_PATH = Path(__file__).resolve().parents[2] / "data" / "personas.json"
 
@@ -34,6 +35,10 @@ def _night(today: date, n: dict) -> SleepSession:
     bed = _clock(n["bed"])
     start = datetime.combine(evening + timedelta(days=1) if bed.hour < 12 else evening, bed)
     end = datetime.combine(evening + timedelta(days=1), _clock(n["wake"]))
+    # These are generated relative-date fixtures, not observed timestamps.
+    # On the spring change move a nonexistent demo clock forward by the gap.
+    start = local_datetime(instant(start))
+    end = local_datetime(instant(end))
     fields = {k: v for k, v in n.items() if k not in ("night", "bed", "wake")}
     return SleepSession(start=start, end=end, **fields)
 

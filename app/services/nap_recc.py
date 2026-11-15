@@ -1,11 +1,11 @@
 """Nap recommendations: press the button, get the alarm.
 
-Doze only offers the naps the research backs (Brief §3):
+Doze offers these nap options, informed by research and product rules (Brief §3):
 * 10 min: immediate lift, lasting up to ~155 min (Brooks & Lack 2006);
 * 20 min: the lift appears ~35 min after waking and lasts up to ~125 min;
-* 90 min: one full cycle, so you wake from light sleep. Only if you say you're
-  very tired and it's early afternoon;
-* never 30-60 min: that's when you're most likely to wake from deep sleep.
+* 90 min: a longer option approximating a typical cycle; waking stage is not
+  guaranteed. Only if you say you're very tired and it's early afternoon;
+* 30-60 min options are excluded by our grogginess-avoidance policy.
 
 Between the allowed options, the sleep model simulates each one and picks the
 nap that gives the most *alert minutes* from waking until tonight's bedtime:
@@ -13,8 +13,9 @@ nap that gives the most *alert minutes* from waking until tonight's bedtime:
     score = sum(alertness(t) * weight(t) * dt, over awake time after the alarm)
             - 6000 * (sleep pressure the nap takes away from tonight)
 
-Time asleep scores zero, so a nap has to earn its keep, and calendar events
-count extra (an exam x2-3). The alarm leaves ~20 min for grogginess to fade
+Time spent lying down, including the estimated time waiting to fall asleep,
+scores zero: our utility measures available awake time, not all awake time.
+A nap has to earn its keep, and calendar events count extra (an exam x2-3). The alarm leaves a 20 min grogginess buffer (not a guarantee of recovery)
 before an exam or a drive, naps after 3 p.m. get a warning (none at all for
 65+, NIA), and every recommendation shows its cost to tonight. Saying you
 feel fine can't cancel sleep debt: people under-count it (Van Dongen et al.
@@ -35,6 +36,7 @@ from app.schemas import (
     Tiredness,
     UserData,
 )
+from app.time_utils import add_elapsed, instant
 from app.services.modes import GROGGY_MIN, MODES, effective_mode
 from app.services.planner import recommend_bedtime
 from app.services.sleep_model import (
@@ -65,12 +67,12 @@ STEP_MIN = 5
 NAP_EFFICIENCY = 0.95
 
 LENGTH_WHY = {
-    10: "10 minutes gives an immediate lift that can last up to ~2.5 hours (Brooks & Lack 2006).",
-    20: "20 minutes: the lift kicks in ~35 minutes after waking and lasts up to ~2 hours (Brooks & Lack 2006).",
-    90: "You're very tired and it's early afternoon, so a full ~90-minute cycle lets you wake from "
-    "light sleep instead of deep sleep.",
+    10: "In one study, 10 minutes gave an immediate lift with some benefits lasting up to ~2.5 hours (Brooks & Lack 2006).",
+    20: "In one study, benefits after 20 minutes emerged ~35 minutes after waking and lasted up to ~2 hours (Brooks & Lack 2006).",
+    90: "You're very tired and it's early afternoon, so a longer nap is an option. "
+    "90 minutes approximates a typical cycle; it cannot guarantee waking from light sleep.",
 }
-NO_MID_NAPS = "Doze never plans 30-60 minute naps: that's when you're most likely to wake from deep sleep, groggy."
+NO_MID_NAPS = "Doze avoids 30-60 minute naps because waking from deeper sleep can leave you groggy; timing varies."
 
 
 def fuse_tiredness(model_pressure: float, tiredness: Tiredness | None) -> float:
@@ -92,12 +94,7 @@ def time_to_fall_asleep_min(pressure: float, usual_min: float) -> float:
 
 
 def _event_at(events: list[CalendarEvent], t: datetime) -> CalendarEvent | None:
-    return next((e for e in events if e.start <= t < e.end and e.category != EventCategory.REST), None)
-
-
-def _next_event(events: list[CalendarEvent], t: datetime) -> CalendarEvent | None:
-    upcoming = [e for e in events if e.start >= t and e.category != EventCategory.REST]
-    return min(upcoming, key=lambda e: e.start) if upcoming else None
+    return next((e for e in events if instant(e.start) <= instant(t) < instant(e.end) and e.category != EventCategory.REST), None)
 
 
 def _buffer_min(event: CalendarEvent) -> int:
@@ -107,14 +104,14 @@ def _buffer_min(event: CalendarEvent) -> int:
 
 
 def _weight(events: list[CalendarEvent], t: datetime, weights: dict[EventCategory, float]) -> float:
-    e = _event_at(events, t)
-    return weights[e.category] if e else 1.0
+    active = [weights[e.category] for e in events if instant(e.start) <= instant(t) < instant(e.end)]
+    return max(active, default=1.0)
 
 
 def _score(states, phys, weights: list[float], start: datetime) -> float:
     total = 0.0
     for s, w in zip(states, weights):
-        if s.at >= start:
+        if instant(s.at) >= instant(start):
             a = alertness(s, phys)
             if a is not None:
                 total += a * w * STEP_MIN
@@ -134,7 +131,7 @@ def _plan(
 ) -> NapRecommendation:
     data, p = model.data, model.data.profile
     mode, _ = effective_mode(data, lie_down)
-    state = model.state if lie_down == model.now else model.state_at(lie_down)
+    state = model.state if instant(lie_down) == instant(model.now) else model.state_at(lie_down)
     fatigue = model.phys.fatigue
     start = replace(state, pressure=_clamp(fuse_tiredness(state.pressure + fatigue, tiredness) - fatigue))
     alert_now = alertness(start, model.phys)
@@ -146,6 +143,8 @@ def _plan(
             headline=headline, reasons=reasons, warnings=warnings or [],
         )
 
+    if state.asleep:
+        return no_nap("You're already asleep in the current sleep record", ["A new nap cannot overlap sleep already in progress."])
     current = _event_at(data.events, lie_down)
     if current is not None:
         return no_nap(
@@ -170,12 +169,13 @@ def _plan(
             ],
         )
 
-    nxt = _next_event(data.events, lie_down)
-    deadline = bedtime - timedelta(hours=TOO_CLOSE_TO_BED_H)
+    future = [e for e in data.events if instant(e.start) >= instant(lie_down) and e.category != EventCategory.REST]
+    nxt = min(future, key=lambda e: instant(add_elapsed(e.start, -timedelta(minutes=e.travel_min + _buffer_min(e))))) if future else None
+    deadline = add_elapsed(bedtime, -timedelta(hours=TOO_CLOSE_TO_BED_H))
     if nxt is not None:
-        deadline = min(deadline, nxt.start - timedelta(minutes=nxt.travel_min + _buffer_min(nxt)))
+        deadline = min(deadline, add_elapsed(nxt.start, -timedelta(minutes=nxt.travel_min + _buffer_min(nxt))), key=instant)
     latency = time_to_fall_asleep_min(start.pressure, model.personal.latency_min)
-    onset = lie_down + timedelta(minutes=latency)
+    onset = add_elapsed(lie_down, timedelta(minutes=latency))
     early_afternoon = EARLY_AFTERNOON[0] <= lie_down.time() < EARLY_AFTERNOON[1]
     options = [*POWER_NAPS, *([FULL_CYCLE] if tiredness == Tiredness.VERY_TIRED and early_afternoon else [])]
 
@@ -188,8 +188,8 @@ def _plan(
 
     results, too_long = [], []
     for minutes in options:
-        alarm = onset + timedelta(minutes=minutes)
-        if alarm > deadline:
+        alarm = add_elapsed(onset, timedelta(minutes=minutes / NAP_EFFICIENCY))
+        if instant(alarm) > instant(deadline):
             too_long.append(minutes)
             continue
         states = simulate(start, [SleepBlock(onset, alarm, NAP_EFFICIENCY, is_nap=True)], times)
@@ -198,7 +198,7 @@ def _plan(
         results.append((score, minutes, alarm, states, cost))
 
     if not results:
-        what = f"{nxt.title} at {nxt.start:%H:%M}" if nxt and deadline < bedtime - timedelta(hours=TOO_CLOSE_TO_BED_H) else "bedtime"
+        what = f"{nxt.title} at {nxt.start:%H:%M}" if nxt and instant(deadline) < instant(add_elapsed(bedtime, -timedelta(hours=TOO_CLOSE_TO_BED_H))) else "bedtime"
         return no_nap(
             "Not enough time for a nap",
             [
@@ -211,8 +211,8 @@ def _plan(
     score, minutes, alarm, states, cost = max(results, key=lambda r: r[0])
     should = score > base_score
     kind = "full_cycle" if minutes == FULL_CYCLE else "power"
-    after_t = alarm + timedelta(minutes=30)
-    after = next((alertness(s, model.phys) for s in states if s.at >= after_t), None)
+    after_t = add_elapsed(alarm, timedelta(minutes=30))
+    after = next((alertness(s, model.phys) for s in states if instant(s.at) >= instant(after_t)), None)
     cost_pct = round(100 * cost / base_bed, 1) if base_bed else 0.0
 
     reasons = [f"Alarm {alarm:%H:%M}: about {latency:.0f} min to fall asleep, then {minutes} min of sleep.", LENGTH_WHY[minutes]]
@@ -228,7 +228,7 @@ def _plan(
     if model.debt_h >= 1:
         reasons.append(f"You're carrying {fmt_h(model.debt_h)} of sleep debt.")
     if model.hrv and model.hrv[1] <= -10:
-        reasons.append(f"Your HRV is {-model.hrv[1]:.0f}% below your 7-day baseline, a sign your body is still recovering.")
+        reasons.append(f"Your HRV is {-model.hrv[1]:.0f}% below your recent nightly baseline, which can mean your body is still recovering.")
     if tiredness in (Tiredness.TIRED, Tiredness.VERY_TIRED):
         reasons.append(f"You said you're {tiredness.value.replace('_', ' ')}.")
     if tiredness == Tiredness.FINE and model.debt_h >= 3:
@@ -252,18 +252,18 @@ def _plan(
     if (
         nxt is not None
         and nxt.category in (EventCategory.EXAM, EventCategory.TRAVEL)
-        and nxt.start - alarm <= timedelta(minutes=SOON_AFTER_ALARM_MIN)
+        and hours_between(alarm, nxt.start) <= SOON_AFTER_ALARM_MIN / 60
     ):
         warnings.append(
-            f"Give yourself 20 minutes after the alarm before {nxt.title}: grogginess usually fades "
-            "within about 20 minutes, and bright light helps (Sleep Research Society)."
+            f"Give yourself 20 minutes after the alarm before {nxt.title}: this is a planning buffer, "
+            "and grogginess can last longer. Do not drive while sleepy."
         )
 
     label = "full-cycle nap" if kind == "full_cycle" else "power nap"
     headline = (
         f"Nap now: alarm at {alarm:%H:%M} ({minutes}-minute {label})"
         if should
-        else f"You don't really need a nap. If you want one: alarm at {alarm:%H:%M} ({minutes} min)"
+        else f"No clear predicted benefit from a nap. If you want one: alarm at {alarm:%H:%M} ({minutes} min)"
     )
     return NapRecommendation(
         should_nap=should, kind=kind, lie_down=lie_down, alarm=alarm, sleep_min=minutes,
@@ -296,14 +296,18 @@ def best_nap_slot(data: UserData, now: datetime, model: PersonModel | None = Non
     start = max(now, datetime.combine(day, SLOT_WINDOW[0]))
     end = datetime.combine(day, SLOT_WINDOW[1])
     best: tuple[float, NapRecommendation] | None = None
-    for t in time_grid(start.replace(second=0, microsecond=0), end, 15):
+    rounded = start.replace(second=0, microsecond=0)
+    if rounded < start:
+        rounded += timedelta(minutes=1)
+    for t in time_grid(rounded, end - timedelta(microseconds=1), 15):
         if _event_at(data.events, t) is not None:
             continue
         plan = _plan(model, t, None, bedtime)
         if not plan.should_nap:
             continue
-        if best is None or (plan.alertness_now or 100) < best[0]:
-            best = (plan.alertness_now or 100, plan)
+        score = plan.alertness_now if plan.alertness_now is not None else 100
+        if best is None or score < best[0]:
+            best = (score, plan)
     if best is None:
         return None
     plan = best[1]

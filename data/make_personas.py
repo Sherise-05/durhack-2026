@@ -4,9 +4,10 @@
 
 Deterministic (fixed seed), so re-running gives the same file. To change a
 persona, edit the numbers here and re-run rather than editing the JSON by
-hand: morning ratings are drawn from the same logistic model learning.py uses
-(P(refreshed) = logistic((slept - need) / 0.6 h)), so the Bayesian learning
-recovers each persona's true need. Not imported by the app.
+hand: synthetic morning ratings are based on a logistic sleep-duration curve
+with added noise. Learning now uses direction-only labels, so exact recovery
+of these chosen need values is not expected. These are demos, not validation
+data. Not imported by the app.
 """
 import json, math, random, sys
 from pathlib import Path

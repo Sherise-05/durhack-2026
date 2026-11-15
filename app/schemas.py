@@ -6,9 +6,13 @@ render the output models (all JSON-serialisable via ``.model_dump(mode="json")``
 
 Conventions
 -----------
-* Datetimes are **naive local time**. Timezone-aware values (e.g. RFC 3339
-  strings from the Google Calendar API) are converted to the server's local
-  time on the way in, so naive and aware datetimes can never get mixed.
+* Datetimes are **naive local time** internally, in the demo's explicit
+  Europe/London zone. Aware inputs retain their instant via the repeated-hour
+  fold; JSON spans include timezone offsets so that fold survives storage.
+  Travel fields are the exception: departure uses home_tz and arrival uses
+  destination_tz. The integration must supply now and sleep/calendar records
+  in a consistent local clock; the demo default is not a global
+  multi-timezone ingestion strategy.
 * Fractions are 0-1 (``efficiency=0.9`` means 90 %).
 * Durations are minutes unless the name ends in ``_h`` (hours).
 * "Brief §N" refers to the Doze Sleep Science Brief (Nov 2026).
@@ -20,11 +24,14 @@ from datetime import date, datetime, time
 from enum import Enum
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo, field_serializer, field_validator, model_validator
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from app.time_utils import hours_between, instant, local_datetime, local_isoformat
 
 
 def _naive_local(value: datetime) -> datetime:
-    return value.astimezone().replace(tzinfo=None) if value.tzinfo else value
+    return local_datetime(value)
 
 
 LocalDatetime = Annotated[datetime, AfterValidator(_naive_local)]
@@ -89,18 +96,23 @@ class EventCategory(str, Enum):
 
 
 class _Span(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     start: LocalDatetime
     end: LocalDatetime
 
     @model_validator(mode="after")
     def _end_after_start(self):
-        if self.end <= self.start:
+        if instant(self.end) <= instant(self.start):
             raise ValueError("end must be after start")
         return self
 
     @property
     def minutes(self) -> float:
-        return (self.end - self.start).total_seconds() / 60
+        return hours_between(self.start, self.end) * 60
+
+    @field_serializer("start", "end", when_used="json")
+    def _serialise_clock(self, value: datetime) -> str:
+        return local_isoformat(value)
 
 
 class SleepSession(_Span):
@@ -126,6 +138,26 @@ class SleepSession(_Span):
     def hours_asleep(self) -> float:
         return self.minutes / 60 * self.efficiency
 
+    @model_validator(mode="after")
+    def _supported_duration(self):
+        if self.minutes > 24 * 60:
+            raise ValueError("split sleep records longer than 24 hours into separate sessions")
+        return self
+
+
+def normalise_sessions(sessions: list[SleepSession]) -> list[SleepSession]:
+    """Upsert identical spans (last record wins); reject ambiguous overlaps.
+
+    All consumers use the same records. Overlaps need resolving at ingestion,
+    rather than guessing which duration, efficiency or check-in to trust.
+    """
+    unique = {(instant(s.start), instant(s.end)): s for s in sessions}
+    ordered = sorted(unique.values(), key=lambda s: instant(s.start))
+    for previous, current in zip(ordered, ordered[1:]):
+        if instant(current.start) < instant(previous.end):
+            raise ValueError("sleep sessions overlap; reconcile the source records first")
+    return ordered
+
 
 class CalendarEvent(_Span):
     title: str
@@ -140,11 +172,40 @@ class CalendarEvent(_Span):
 class TravelPlan(BaseModel):
     home_tz: str = "Europe/London"  # IANA names; the difference comes from zoneinfo
     destination_tz: str
-    departure: LocalDatetime  # home local time
-    arrival: LocalDatetime  # destination local time
+    departure: datetime  # home local time
+    arrival: datetime  # destination local time
+    planned_from: date | None = None  # None preserves legacy/demo full preparation
+
+    @field_validator("home_tz", "destination_tz")
+    @classmethod
+    def _valid_zone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("use a valid IANA timezone name") from exc
+        return value
+
+    @field_validator("departure", "arrival")
+    @classmethod
+    def _travel_local(cls, value: datetime, info: ValidationInfo) -> datetime:
+        zone_name = "home_tz" if info.field_name == "departure" else "destination_tz"
+        zone = info.data.get(zone_name, "Europe/London")
+        return local_datetime(value, zone)
+
+    @model_validator(mode="after")
+    def _arrival_after_departure(self):
+        if instant(self.arrival, self.destination_tz) <= instant(self.departure, self.home_tz):
+            raise ValueError("arrival must be after departure as an actual instant")
+        return self
+
+    @field_serializer("departure", "arrival", when_used="json")
+    def _serialise_travel_clock(self, value: datetime, info) -> str:
+        zone = self.home_tz if info.field_name == "departure" else self.destination_tz
+        return local_isoformat(value, zone)
 
 
 class UserProfile(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     name: str
     age_band: AgeBand = AgeBand.YOUNG_ADULT
     gender: str | None = Field(
@@ -163,6 +224,13 @@ class UserProfile(BaseModel):
     travel: TravelPlan | None = None  # travel mode
     term_starts: date | None = None  # holiday mode: when the normal schedule resumes
 
+    @field_validator("usual_bedtime", "usual_wake")
+    @classmethod
+    def _local_clock_only(cls, value: time) -> time:
+        if value.tzinfo is not None:
+            raise ValueError("use a local clock time without a timezone offset")
+        return value
+
 
 class UserData(BaseModel):
     """Everything we know about one user: what tiger_data / personas hand to the maths."""
@@ -171,11 +239,22 @@ class UserData(BaseModel):
     sessions: list[SleepSession] = Field(default_factory=list)
     events: list[CalendarEvent] = Field(default_factory=list)
 
+    @field_validator("sessions")
+    @classmethod
+    def _canonical_sleep(cls, value: list[SleepSession]) -> list[SleepSession]:
+        return normalise_sessions(value)
+
 
 # --------------------------------------------------------------------------- outputs
 
 
-class AlertnessPoint(BaseModel):
+class _ClockOutput(BaseModel):
+    @field_serializer("*", mode="wrap", when_used="json", check_fields=False)
+    def _serialise_datetime(self, value, handler):
+        return local_isoformat(value) if isinstance(value, datetime) else handler(value)
+
+
+class AlertnessPoint(_ClockOutput):
     at: datetime
     alertness: float | None = None  # 0-100; None while asleep (Chart.js draws a gap)
 
@@ -199,7 +278,7 @@ class Card(BaseModel):
     points: list[str] = Field(default_factory=list)
 
 
-class NightStats(BaseModel):
+class NightStats(_ClockOutput):
     morning: date  # the day you woke up
     bedtime: datetime
     wake: datetime
@@ -212,7 +291,7 @@ class NightStats(BaseModel):
     rating: int | None = None
 
 
-class Snapshot(BaseModel):
+class Snapshot(_ClockOutput):
     """The dashboard's headline numbers right now."""
 
     now: datetime
@@ -230,7 +309,7 @@ class Snapshot(BaseModel):
     gp_card: Card | None = None
 
 
-class NapRecommendation(BaseModel):
+class NapRecommendation(_ClockOutput):
     should_nap: bool
     kind: Literal["power", "full_cycle", "none"]  # 10/20 min, or 90 min (Brief §3)
     lie_down: datetime
@@ -246,7 +325,8 @@ class NapRecommendation(BaseModel):
     without_nap: list[AlertnessPoint] = Field(default_factory=list)
 
 
-class BedtimeRecommendation(BaseModel):
+class BedtimeRecommendation(_ClockOutput):
+    feasible: bool = True
     wind_down: datetime
     bedtime: datetime  # lights out
     alarm: datetime
@@ -260,13 +340,13 @@ class BedtimeRecommendation(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class EventForecast(BaseModel):
+class EventForecast(_ClockOutput):
     title: str
     start: datetime
     alertness: float  # mean predicted alertness during the event
 
 
-class WhatIf(BaseModel):
+class WhatIf(_ClockOutput):
     """What-if simulator: 'if I sleep from bedtime to alarm, how will tomorrow go?'"""
 
     bedtime: datetime
