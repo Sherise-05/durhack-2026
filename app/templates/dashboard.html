@@ -32,9 +32,12 @@
 </div>
 
 <div class="dashboard-grid">
+
+    <!-- Nap Recommendation -->
     <section class="card feature-card">
         <p class="eyebrow">NAP RECOMMENDATION</p>
         <h2>Time for a little recharge?</h2>
+
         <p>
             Find a nap window that fits around your
             upcoming commitments.
@@ -53,29 +56,29 @@
         </a>
     </section>
 
+    <!-- Upcoming Schedule -->
     <section class="card">
         <p class="eyebrow">YOUR DAY</p>
         <h2>Upcoming schedule</h2>
 
+        {% for event in upcoming_events %}
         <div class="event">
-            <span class="event-time">10:00</span>
-            <span>Morning lecture</span>
+            <span class="event-time">
+                {{ event.time }}
+            </span>
+            <span>{{ event.title }}</span>
         </div>
-
-        <div class="event">
-            <span class="event-time">14:00</span>
-            <span>Project meeting</span>
-        </div>
-
-        <div class="event">
-            <span class="event-time">18:00</span>
-            <span>Evening plans</span>
-        </div>
+        {% else %}
+        <p class="muted">
+            No upcoming events scheduled.
+        </p>
+        {% endfor %}
 
         <a class="text-link" href="/calendar">
             View calendar →
         </a>
     </section>
+
 </div>
 
 <p class="demo-note">
