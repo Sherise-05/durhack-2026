@@ -10,19 +10,32 @@
 <div class="today-layout">
 <section class="stats-grid today-overview" aria-label="Your sleep context">
     <article class="card">
-        <span class="card-label">Last recorded night</span>
-        {% if snapshot.last_night %}
-        <p class="metric-value">{{ snapshot.last_night.hours_asleep|duration_h }}</p>
-        <p class="muted">{{ snapshot.last_night.morning.strftime('%d %b') }} · estimated time asleep</p>
+        {% if not bedtime.feasible %}
+        <span class="card-label">Tonight</span>
+        <p class="metric-value">No window</p>
+        <p class="muted">No suitable sleep window fits. <a href="/sleep-planner">See why</a></p>
+        {% elif bedtime.in_progress %}
+        <span class="card-label">Asleep now · wake up</span>
+        <p class="metric-value">{{ bedtime.alarm|clock_ceil }}</p>
+        <p class="muted">≈ {{ bedtime.remaining_sleep_h|duration_h }} of sleep left</p>
         {% else %}
-        <p class="metric-value">Not logged</p>
-        <p class="muted"><a href="/sleep-history#log-sleep">Add your latest completed night</a></p>
+        <span class="card-label">Start winding down</span>
+        <p class="metric-value">{{ bedtime.wind_down|clock }}</p>
+        <p class="muted">Lights out {{ bedtime.bedtime|clock }} · wake {{ bedtime.alarm|clock_ceil }}</p>
         {% endif %}
     </article>
     <article class="card">
         <span class="card-label">Estimated sleep need</span>
         <p class="metric-value">{{ snapshot.sleep_need_h|duration_h }}</p>
         <p class="muted">{% if informative_check_ins %}From {{ informative_check_ins }} informative morning check-in{{ 's' if informative_check_ins != 1 else '' }}{% else %}Starting estimate from your profile{% endif %}</p>
+        <div class="card-sub">
+            <span class="card-label">Last recorded night</span>
+            {% if snapshot.last_night %}
+            <p><strong>{{ snapshot.last_night.hours_asleep|duration_h }}</strong> <span class="muted">· {{ snapshot.last_night.morning.strftime('%d %b') }}{% if snapshot.last_night.hours_asleep < snapshot.sleep_need_h %} · {{ (snapshot.sleep_need_h - snapshot.last_night.hours_asleep)|duration_h }} short{% endif %}</span></p>
+            {% else %}
+            <p class="muted">Not logged · <a href="/sleep-history#log-sleep">Add your latest night</a></p>
+            {% endif %}
+        </div>
     </article>
     <article class="card blue-card">
         <span class="card-label">{% if next_event_in_progress %}Happening now{% else %}Next commitment{% endif %}</span>
@@ -63,15 +76,8 @@
         <p class="eyebrow">YOUR BEDTIME PLAN</p>
         <h2>{% if bedtime.in_progress %}Your current sleep window{% else %}Make room for tonight{% endif %}</h2>
         {% if bedtime.feasible %}
-        <dl class="timeline">
-            {% if not bedtime.in_progress %}
-            <div><dt>Wind down</dt><dd>{{ bedtime.wind_down|datetime_label }}</dd></div>
-            <div><dt>Lights out</dt><dd>{{ bedtime.bedtime|datetime_label }}</dd></div>
-            {% endif %}
-            <div><dt>Wake up</dt><dd>{{ bedtime.alarm|datetime_label }}</dd></div>
-        </dl>
-        {% if bedtime.in_progress %}<p>Sleep is already in progress. Estimated remaining sleep: {{ bedtime.remaining_sleep_h|duration_h }}.</p>
-        {% else %}<p class="muted">Estimated sleep {{ bedtime.sleep_h|duration_h }} · based on your routine{% if has_completed_history %} and recorded nights{% endif %}.</p>{% endif %}
+        {% with night = bedtime %}{% include "_night_timeline.html" %}{% endwith %}
+        {% if not bedtime.in_progress %}<p class="muted">Based on your routine{% if has_completed_history %} and recorded nights{% endif %}.</p>{% endif %}
         {% else %}
         <p class="notice warning">No suitable sleep window fits. Review your commitments and the full explanation before making a plan.</p>
         {% endif %}

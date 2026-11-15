@@ -108,6 +108,23 @@ small { font-size: .8rem; line-height: 1.5; color: var(--muted); font-weight: 40
 .timeline > :last-child { border-bottom: 0; }
 .timeline time, .timeline strong { font-variant-numeric: tabular-nums; font-weight: 650; }
 .timeline dt, .timeline dd { margin: 0; }
+.card-sub { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.card-sub p { margin: 4px 0 0; }
+/* Tonight timeline: stops on a rail, dashed wind-down, solid sleep bar. */
+.night-timeline { list-style: none; margin: 20px 0 14px; padding: 0; }
+.night-timeline li { position: relative; padding-left: 36px; }
+.nt-stop { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 40px; }
+.nt-stop::before { content: ""; position: absolute; left: 4px; top: 50%; width: 16px; height: 16px; margin-top: -8px; box-sizing: border-box; border-radius: 50%; background: var(--surface); border: 3px solid var(--brand-blue); z-index: 1; }
+.nt-stop-sleep::before { border-color: var(--primary); background: var(--primary); }
+.nt-stop-wake::before { border-color: var(--primary); }
+.nt-label { display: block; font-weight: 650; }
+.nt-day { display: block; color: var(--muted); font-size: .82rem; }
+.nt-time { font-size: 1.6rem; font-weight: 700; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
+.nt-span { padding-top: 12px; padding-bottom: 12px; color: var(--muted); font-size: .88rem; }
+.nt-span::before { content: ""; position: absolute; left: 10px; top: -12px; bottom: -12px; width: 4px; border-radius: 2px; }
+.nt-wind::before { background: repeating-linear-gradient(to bottom, var(--brand-blue) 0 6px, transparent 6px 11px); }
+.nt-sleep { padding-top: 30px; padding-bottom: 30px; color: var(--primary); font-weight: 600; }
+.nt-sleep::before { left: 7px; width: 10px; border-radius: 5px; background: linear-gradient(to bottom, var(--primary), var(--brand-pink)); }
 .notice { margin: 0 0 22px; padding: 16px 20px; border: 1px solid #c8dfed; border-radius: 13px; background: var(--blue-light); color: var(--text); font-size: .9rem; }
 .notice p:last-child, .notice ul:last-child { margin-bottom: 0; }
 .warning { background: var(--warning-bg); border-color: #eed7ac; color: var(--warning-text); }

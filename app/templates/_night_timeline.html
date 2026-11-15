@@ -1,0 +1,29 @@
+{# Tonight as a vertical timeline. Expects `night` (a BedtimeRecommendation). #}
+{% set wind_day = night.wind_down|date_label %}
+{% set bed_day = night.bedtime|date_label %}
+{% set wake_day = night.alarm|date_label %}
+<ol class="night-timeline" aria-label="Tonight's timeline">
+    {% if not night.in_progress %}
+    <li class="nt-stop">
+        <div><span class="nt-label">Wind down</span><span class="nt-day">{{ wind_day }}</span></div>
+        <time class="nt-time" datetime="{{ night.wind_down.isoformat() }}">{{ night.wind_down|clock }}</time>
+    </li>
+    {% set wind_min = ((night.bedtime - night.wind_down).total_seconds() / 60)|round|int %}
+    <li class="nt-span nt-wind">{{ wind_min ~ ' min' if wind_min < 60 else (wind_min / 60)|duration_h }} · dim the lights, screens away</li>
+    <li class="nt-stop nt-stop-sleep">
+        <div><span class="nt-label">Lights out</span>{% if bed_day != wind_day %}<span class="nt-day">{{ bed_day }}</span>{% endif %}</div>
+        <time class="nt-time" datetime="{{ night.bedtime.isoformat() }}">{{ night.bedtime|clock }}</time>
+    </li>
+    <li class="nt-span nt-sleep">≈ {{ night.sleep_h|duration_h }} asleep{% if night.cycles >= 1 %} · about {{ '%.0f'|format(night.cycles) }} sleep cycles{% endif %}</li>
+    {% else %}
+    <li class="nt-stop nt-stop-sleep">
+        <div><span class="nt-label">Asleep now</span></div>
+        <span class="nt-time">Now</span>
+    </li>
+    <li class="nt-span nt-sleep">≈ {{ night.remaining_sleep_h|duration_h }} of sleep left</li>
+    {% endif %}
+    <li class="nt-stop nt-stop-wake">
+        <div><span class="nt-label">Wake up</span>{% if wake_day != bed_day or night.in_progress %}<span class="nt-day">{{ wake_day }}</span>{% endif %}</div>
+        <time class="nt-time" datetime="{{ night.alarm.isoformat() }}">{{ night.alarm|clock_ceil }}</time>
+    </li>
+</ol>

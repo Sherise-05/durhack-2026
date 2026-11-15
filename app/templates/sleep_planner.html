@@ -19,16 +19,7 @@
     <p class="eyebrow">TONIGHT</p>
     {% if plan.feasible %}
         <h2>{% if plan.in_progress %}Your night is already underway.{% else %}Your evening, made a little clearer.{% endif %}</h2>
-        {% if plan.in_progress %}
-        <p>Sleep is already in progress. Estimated remaining sleep: <strong>{{ '%.1f'|format(plan.remaining_sleep_h) }} h</strong>.</p>
-        {% else %}
-        <div class="stats-grid">
-            <div><span class="card-label">Wind down</span><p class="metric-value">{{ plan.wind_down|clock }}</p><p class="muted">{{ plan.wind_down|datetime_label }}</p></div>
-            <div><span class="card-label">Lights out</span><p class="metric-value">{{ plan.bedtime|clock }}</p><p class="muted">{{ plan.bedtime|datetime_label }}</p></div>
-            <div><span class="card-label">Wake up</span><p class="metric-value">{{ plan.alarm|clock_ceil }}</p><p class="muted">{{ plan.alarm|datetime_label }}</p></div>
-        </div>
-        {% endif %}
-        {% if plan.in_progress %}<p>Suggested wake-up: <strong>{{ plan.alarm|datetime_label }}</strong>.</p>{% endif %}
+        {% with night = plan %}{% include "_night_timeline.html" %}{% endwith %}
         <p>Estimated total sleep: <strong>{{ '%.1f'|format(plan.sleep_h) }} h</strong> · estimated need {{ '%.1f'|format(plan.need_h) }} h.</p>
         <p class="muted">Set the suggested alarm on your device.</p>
     {% else %}
