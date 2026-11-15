@@ -102,7 +102,7 @@ def test_what_if_is_hypothetical_and_does_not_save_sleep(client):
     assert result.json()["curve"]
     page = client.post("/sleep-planner/what-if", data=payload)
     assert page.status_code == 200
-    assert "Your hypothetical next day" in page.text
+    assert "YOUR CHOICE" in page.text and "than Doze's plan" in page.text
     assert db.list_sleep_records() == before
 
 
@@ -136,7 +136,7 @@ def test_what_if_form_preserves_second_occurrence_of_repeated_clock(client, monk
     assert response.status_code == 200
     assert 'value="2026-10-25T01:30:00+00:00"' in response.text
     assert 'value="2026-10-25T02:30:00+00:00"' in response.text
-    assert "estimated sleep 0.9 h" in response.text
+    assert "54 min asleep" in response.text  # 0.9 h
     assert "2026-10-25T01:30:00+01:00" not in response.text
     api = client.post("/api/me/what-if", json=payload).json()
     assert api["bedtime"] == payload["bedtime"]
@@ -185,3 +185,21 @@ def test_today_shows_one_nap_button_not_a_no_nap_message(client):
     page = client.get("/dashboard").text
     assert "data-nap-widget" in page and "Tap for a nap" in page
     assert "No nap is suggested right now" not in page and "Review nap options" not in page
+
+
+def test_what_if_scenarios_compare_against_dozes_plan_without_saving(client):
+    _short_night()
+    exam = CalendarEvent(title="Morning exam", start=datetime(2026, 11, 17, 10),
+                         end=datetime(2026, 11, 17, 12), category=EventCategory.EXAM)
+    db.replace_calendar_events([exam])
+    before = db.list_sleep_records()
+    page = client.post("/sleep-planner/what-if", data={"preset": "late"})
+    assert page.status_code == 200
+    compare = page.context["compare"]
+    assert compare["sleep_delta_h"] < 0  # a 2 a.m. night means less sleep
+    row = next(r for r in compare["events"] if r["title"] == "Morning exam")
+    assert row["choice"] < row["plan"]  # and a less alert exam
+    assert set(compare["curves"]) == {"Doze's plan", "Your choice"}
+    assert "less sleep than Doze's plan" in page.text and "Morning exam" in page.text
+    assert db.list_sleep_records() == before
+    assert client.post("/sleep-planner/what-if", data={"preset": "nonsense"}).status_code == 422

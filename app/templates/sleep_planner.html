@@ -1,64 +1,133 @@
 {% extends "base.html" %}
-{% block title %}Tonight’s plan | Doze{% endblock %}
+{% block title %}Tonight | Doze{% endblock %}
 {% block content %}
-{% set is_what_if = request.url.path.endswith('/what-if') %}
+{% set what_if_open = preview or error %}
 <section class="welcome">
-    <p class="eyebrow">YOUR PLAN</p>
-    <h1>Make room for a better night.</h1>
-    <p>A plan shaped around your routine, recorded sleep and upcoming commitments.</p>
+    <p class="eyebrow">TONIGHT</p>
+    <h1>{% if plan.feasible and not plan.in_progress %}Lights out {{ plan.bedtime|clock }}, up at {{ plan.alarm|clock_ceil }}.{% elif plan.in_progress %}Your night is already underway.{% else %}Tonight needs a rethink.{% endif %}</h1>
+    <p>Worked back from tomorrow's first commitment, your sleep need and your recent nights.</p>
 </section>
 {% if not has_sleep_history %}
-<p class="notice">This starting plan uses your profile defaults. <a href="/dashboard#check-in">Record last night’s sleep</a> to personalise it.</p>
+<p class="notice">This starting plan uses your profile defaults. <a href="/dashboard#check-in">Log last night on Today</a> to personalise it.</p>
 {% endif %}
-<section class="card blue-card section-gap">
-    <p class="eyebrow">TONIGHT</p>
+
+<div class="tab-switch" role="tablist" aria-label="Tonight" data-tabs>
+    <button type="button" role="tab" id="tab-plan" aria-controls="panel-plan" aria-selected="{{ 'false' if what_if_open else 'true' }}">Doze's plan</button>
+    <button type="button" role="tab" id="tab-what-if" aria-controls="panel-what-if" aria-selected="{{ 'true' if what_if_open else 'false' }}">What if…</button>
+</div>
+
+<div role="tabpanel" id="panel-plan" aria-labelledby="tab-plan" data-tab-panel{% if what_if_open %} data-start-hidden{% endif %}>
+<section class="card blue-card">
+    <p class="eyebrow">DOZE'S PLAN</p>
     {% if plan.feasible %}
-        <h2>{% if plan.in_progress %}Your night is already underway.{% else %}Your evening, made a little clearer.{% endif %}</h2>
+        <h2>{% if plan.in_progress %}Sleep is in progress.{% else %}Your night, step by step{% endif %}</h2>
         {% with night = plan %}{% include "_night_timeline.html" %}{% endwith %}
-        <p>Estimated total sleep: <strong>{{ '%.1f'|format(plan.sleep_h) }} h</strong> · estimated need {{ '%.1f'|format(plan.need_h) }} h.</p>
-        <p class="muted">Set the suggested alarm on your device.</p>
+        <p>Estimated total sleep: <strong>{{ plan.sleep_h|duration_h }}</strong> · your need {{ plan.need_h|duration_h }}.</p>
     {% else %}
     <h2>No suitable sleep window fits.</h2>
     <p class="notice warning">No suitable sleep window fits. Review your commitments and the reasons below before making a plan.</p>
     {% endif %}
     <details class="section-gap" {% if not plan.feasible %}open{% endif %}>
-        <summary>Why this fits{% if not plan.feasible %} — and what needs attention{% endif %}</summary>
+        <summary>Why this plan{% if not plan.feasible %} — and what needs attention{% endif %}</summary>
         <ul>{% for reason in plan.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
     </details>
+    {% if plan.feasible and not plan.in_progress %}
+    <div class="action-row section-gap"><a class="button secondary" href="#what-if" data-open-tab="tab-what-if">What if I sleep differently? →</a></div>
+    {% endif %}
 </section>
 {% if plan.warnings %}<div class="notice warning section-gap" role="status"><ul>{% for warning in plan.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
-<section class="card section-gap" id="what-if">
-    <p class="eyebrow">EXPLORE ANOTHER PLAN</p>
-    <h2>What if I sleep at a different time?</h2>
-    <p class="muted">Compare one sleep window within the next seven days. This preview does not change your history or set an alarm.</p>
+</div>
+
+<div role="tabpanel" id="panel-what-if" aria-labelledby="tab-what-if" data-tab-panel{% if not what_if_open %} data-start-hidden{% endif %}>
+<section class="card" id="what-if">
+    <p class="eyebrow">SIMULATE YOUR NIGHT</p>
+    <h2>What if I sleep differently?</h2>
+    <p class="muted">Pick a scenario and Doze simulates tomorrow against its own plan. Nothing is saved.</p>
     {% if error %}<p class="notice warning" role="alert">{{ error }}</p>{% endif %}
-    <form action="/sleep-planner/what-if" method="post" class="form-grid section-gap">
-        <div class="field">
-            <label for="bedtime">Lights out</label>
-            <input id="bedtime" name="bedtime" type="text" data-datetime-field required placeholder="Choose a date and time" {% if bedtime_input is not none and (error or preview or (plan.feasible and not plan.in_progress)) %}value="{{ bedtime_input }}"{% endif %}>
-        </div>
-        <div class="field">
-            <label for="alarm">Wake up</label>
-            <input id="alarm" name="alarm" type="text" data-datetime-field required placeholder="Choose a date and time" {% if alarm_input is not none and (error or preview or plan.feasible) %}value="{{ alarm_input }}"{% endif %}>
-        </div>
-        <div class="action-row"><button type="submit" class="button">Compare my plan</button></div>
+    {% if plan.feasible and not plan.in_progress %}
+    <form action="/sleep-planner/what-if" method="post" class="scenario-row">
+        {% for key, label in presets.items() %}
+        <button class="nap-chip{% if active_preset == key %} is-active{% endif %}" type="submit" name="preset" value="{{ key }}">{{ label }}</button>
+        {% endfor %}
     </form>
-    <p class="demo-note">Times use Europe/London. If entering a timestamp directly, include its +01:00 or +00:00 offset when a clock time occurs twice.</p>
+    {% endif %}
+    <details class="section-gap"{% if error and not active_preset %} open{% endif %}>
+        <summary>Or choose exact times</summary>
+        <form action="/sleep-planner/what-if" method="post" class="form-grid section-gap">
+            <div class="field">
+                <label for="bedtime">Lights out</label>
+                <input id="bedtime" name="bedtime" type="text" data-datetime-field required placeholder="Choose a date and time" {% if bedtime_input is not none and (error or preview or (plan.feasible and not plan.in_progress)) %}value="{{ bedtime_input }}"{% endif %}>
+            </div>
+            <div class="field">
+                <label for="alarm">Wake up</label>
+                <input id="alarm" name="alarm" type="text" data-datetime-field required placeholder="Choose a date and time" {% if alarm_input is not none and (error or preview or plan.feasible) %}value="{{ alarm_input }}"{% endif %}>
+            </div>
+            <div class="action-row"><button type="submit" class="button">Simulate</button></div>
+        </form>
+    </details>
 </section>
+
 {% if preview %}
 <section class="card chart-section section-gap" aria-live="polite">
-    <p class="eyebrow">YOUR WHAT-IF RESULT</p>
-    <h2>Your hypothetical next day</h2>
-    <p>{{ preview.bedtime|datetime_label }} to {{ preview.alarm|datetime_label }} · estimated sleep {{ '%.1f'|format(preview.sleep_h) }} h.</p>
-    <p class="muted">Estimated alertness, on a 0–100 model scale. Gaps indicate sleep.</p>
-    {% if preview.warnings %}<div class="notice warning"><ul>{% for warning in preview.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
-    <canvas class="alertness-chart" data-chart="preview-curve" aria-label="Hypothetical alertness after the chosen sleep" role="img"></canvas>
-    <script type="application/json" id="preview-curve">{{ {"Preview": curve}|tojson }}</script>
-    {% if preview.events %}
-    <h3>Estimated alertness during your events</h3>
+    <p class="eyebrow">{{ presets[active_preset]|upper if active_preset else 'YOUR CHOICE' }}</p>
+    <h2>{{ preview.bedtime|clock }} → {{ preview.alarm|clock_ceil }} · {{ preview.sleep_h|duration_h }} asleep</h2>
+    {% if compare %}
+    {% set delta = compare.sleep_delta_h %}
+    <p class="compare-delta {{ 'is-worse' if delta < -0.05 else 'is-better' if delta > 0.05 else '' }}">
+        {% if delta < -0.05 %}{{ (-delta)|duration_h }} less sleep than Doze's plan{% elif delta > 0.05 %}{{ delta|duration_h }} more sleep than Doze's plan{% else %}About the same sleep as Doze's plan{% endif %}
+        ({{ compare.base_sleep_h|duration_h }}).
+    </p>
+    {% endif %}
+    {% set late_rows = compare.events|selectattr('late')|list if compare else [] %}
+    {% if preview.warnings or late_rows %}<div class="notice warning"><ul>{% for row in late_rows %}<li>You'd wake at {{ preview.alarm|clock_ceil }} without time to get ready for {{ row.title }} at {{ row.start|clock }}.</li>{% endfor %}{% for warning in preview.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
+
+    {% if compare and compare.events %}
+    <h3>How sharp you'd be at your events</h3>
+    <div class="table-scroll">
+    <table class="compare-table">
+        <thead><tr><th scope="col">Event</th><th scope="col">Doze's plan</th><th scope="col">Your choice</th><th scope="col">Change</th></tr></thead>
+        <tbody>
+        {% for row in compare.events %}
+        {% set change = (row.choice - row.plan) if row.choice is not none else none %}
+        <tr>
+            <th scope="row">{{ row.title }}<span class="muted"> · {{ row.start|datetime_label }}</span></th>
+            <td>{{ row.plan }}/100</td>
+            <td>{{ row.choice if row.choice is not none else '—' }}{% if row.choice is not none %}/100{% endif %}</td>
+            {% if row.late %}<td class="is-worse">Late: no time to get ready</td>
+            {% else %}<td class="{{ 'is-worse' if change is not none and change < 0 else 'is-better' if change is not none and change > 0 else '' }}">{% if change is none %}—{% elif change > 0 %}+{{ change }}{% elif change < 0 %}{{ change }}{% else %}same{% endif %}</td>{% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% elif preview.events %}
+    <h3>How sharp you'd be at your events</h3>
     <ul>{% for event in preview.events %}<li>{{ event.title }} · {{ event.start|datetime_label }} · {{ event.alertness|round|int }}/100</li>{% endfor %}</ul>
     {% endif %}
-    <details class="section-gap"><summary>Exact times used for this preview</summary><p>{{ bedtime_input }} to {{ alarm_input }}</p></details>
+
+    <h3 class="section-gap">Predicted alertness</h3>
+    <p class="muted">0–100 model estimate{% if compare %}: solid line is Doze's plan, dashed is your choice{% endif %}. Gaps are sleep.</p>
+    <canvas class="alertness-chart" data-chart="preview-curve" aria-label="Predicted alertness for your choice{% if compare %} compared with Doze's plan{% endif %}; gaps indicate sleep" role="img"></canvas>
+    <script type="application/json" id="preview-curve">{{ (compare.curves if compare else {"Your choice": curve})|tojson }}</script>
 </section>
 {% endif %}
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+(() => {  // Two tabs on Tonight; without JS both panels simply show.
+    const tabs = [...document.querySelectorAll("[data-tabs] [role=tab]")];
+    const select = id => tabs.forEach(tab => {
+        const on = tab.id === id;
+        tab.setAttribute("aria-selected", on);
+        document.getElementById(tab.getAttribute("aria-controls")).hidden = !on;
+    });
+    document.querySelectorAll("[data-start-hidden]").forEach(panel => { panel.hidden = true; });
+    tabs.forEach(tab => tab.addEventListener("click", () => { select(tab.id); window.dispatchEvent(new Event("resize")); }));
+    document.querySelectorAll("[data-open-tab]").forEach(link => link.addEventListener("click", event => {
+        event.preventDefault(); select(link.dataset.openTab); document.getElementById("tab-what-if").scrollIntoView({block: "start"});
+    }));
+    if (location.hash === "#what-if") select("tab-what-if");
+})();
+</script>
 {% endblock %}
