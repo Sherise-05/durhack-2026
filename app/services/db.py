@@ -27,7 +27,8 @@ DEFAULT_DB_PATH = PROJECT_ROOT / "instance" / "doze.db"
 DB_PATH = DEFAULT_DB_PATH
 SOURCE_ID_PATTERN = re.compile(r"[A-Za-z0-9_.:-]{1,200}")
 TOKEN_HASH_PATTERN = re.compile(r"[a-f0-9]{64}")
-_ACCOUNT_ID: ContextVar[str | None] = ContextVar("doze_account_id", default=None)
+_ACCOUNT_ID: ContextVar[str | None] = ContextVar(
+    "doze_account_id", default=None)
 
 
 def current_account_id() -> str | None:
@@ -95,6 +96,15 @@ def init_db():
             CREATE TABLE IF NOT EXISTS oauth_pending (
                 reference TEXT PRIMARY KEY, payload TEXT NOT NULL
             );
+            
+            CREATE TABLE IF NOT EXISTS dreams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+                           
             CREATE TABLE IF NOT EXISTS accounts (
                 id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 password_hash TEXT NOT NULL, name TEXT NOT NULL,
@@ -155,7 +165,8 @@ def _safe_account(row) -> dict | None:
 def _require_account(conn, user_id: str, *, matching_scope: bool = False):
     if matching_scope and current_account_id() not in (None, user_id):
         raise ValueError("This account does not own that setup conversation.")
-    row = conn.execute("SELECT * FROM accounts WHERE id = ?", (user_id,)).fetchone()
+    row = conn.execute("SELECT * FROM accounts WHERE id = ?",
+                       (user_id,)).fetchone()
     if row is None:
         raise ValueError("Unknown account.")
     return row
@@ -175,13 +186,15 @@ def create_account(email: str, password_hash: str, name: str) -> dict:
             conn.execute("INSERT INTO accounts (id, email, password_hash, name, created_at) VALUES (?, ?, ?, ?, ?)",
                          (user_id, email, password_hash, name, datetime.now(timezone.utc).isoformat()))
         except sqlite3.IntegrityError:
-            raise ValueError("An account already exists for that email address.") from None
+            raise ValueError(
+                "An account already exists for that email address.") from None
         return _safe_account(_require_account(conn, user_id))
 
 
 def find_account_by_email(email: str) -> dict | None:
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM accounts WHERE email = ?", (email.strip().casefold(),)).fetchone()
+        row = conn.execute("SELECT * FROM accounts WHERE email = ?",
+                           (email.strip().casefold(),)).fetchone()
     if row is None:
         return None
     return {**_safe_account(row), "password_hash": row["password_hash"]}
@@ -189,7 +202,8 @@ def find_account_by_email(email: str) -> dict | None:
 
 def get_account(user_id: str) -> dict | None:
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM accounts WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM accounts WHERE id = ?", (user_id,)).fetchone()
     return _safe_account(row)
 
 
@@ -199,7 +213,8 @@ def _session_hash(value: str):
 
 
 def _utc(value: str | datetime) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
+    parsed = datetime.fromisoformat(value.replace(
+        "Z", "+00:00")) if isinstance(value, str) else value
     if parsed.tzinfo is None:
         raise ValueError("Use an offset-bearing session expiry.")
     return parsed.astimezone(timezone.utc)
@@ -224,23 +239,27 @@ def resolve_account_session(token_hash: str) -> dict | None:
         if row is None:
             return None
         if _utc(row["expires_at"]) <= datetime.now(timezone.utc):
-            conn.execute("DELETE FROM account_sessions WHERE token_hash = ?", (token_hash,))
+            conn.execute(
+                "DELETE FROM account_sessions WHERE token_hash = ?", (token_hash,))
             return None
         return _safe_account(row)
 
 
 def delete_account_session(token_hash: str):
     with get_connection() as conn:
-        conn.execute("DELETE FROM account_sessions WHERE token_hash = ?", (token_hash,))
+        conn.execute(
+            "DELETE FROM account_sessions WHERE token_hash = ?", (token_hash,))
 
 
 def _profile(conn) -> UserProfile:
     user_id = current_account_id()
     if user_id is None:
-        row = conn.execute("SELECT payload FROM profiles WHERE id = 1").fetchone()
+        row = conn.execute(
+            "SELECT payload FROM profiles WHERE id = 1").fetchone()
         return UserProfile.model_validate_json(row["payload"]) if row else UserProfile(name="You")
     account = _require_account(conn, user_id)
-    row = conn.execute("SELECT payload FROM scoped_profiles WHERE user_id = ?", (user_id,)).fetchone()
+    row = conn.execute(
+        "SELECT payload FROM scoped_profiles WHERE user_id = ?", (user_id,)).fetchone()
     return UserProfile.model_validate_json(row["payload"]) if row else UserProfile(name=account["name"])
 
 
@@ -261,9 +280,11 @@ def _calendar_rows(conn):
 
 def load_user_data() -> UserData:
     with get_connection() as conn:
-        conn.execute("BEGIN")  # Profile, history and calendar come from one snapshot.
+        # Profile, history and calendar come from one snapshot.
+        conn.execute("BEGIN")
         return UserData(profile=_profile(conn),
-                        sessions=[SleepSession.model_validate_json(row["payload"]) for row in _sleep_rows(conn)],
+                        sessions=[SleepSession.model_validate_json(
+                            row["payload"]) for row in _sleep_rows(conn)],
                         events=[CalendarEvent.model_validate_json(row["payload"]) for row in _calendar_rows(conn)])
 
 
@@ -276,7 +297,8 @@ def _write_profile(conn, profile: UserProfile, user_id: str | None):
         conn.execute("INSERT INTO scoped_profiles (user_id, payload) VALUES (?, ?) "
                      "ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload", (user_id, profile.model_dump_json()))
         if profile.name.strip():
-            conn.execute("UPDATE accounts SET name = ? WHERE id = ?", (profile.name.strip(), user_id))
+            conn.execute("UPDATE accounts SET name = ? WHERE id = ?",
+                         (profile.name.strip(), user_id))
 
 
 def save_profile(profile: UserProfile) -> UserProfile:
@@ -288,7 +310,8 @@ def save_profile(profile: UserProfile) -> UserProfile:
 
 def list_sleep_records() -> list[dict]:
     with get_connection() as conn:
-        records = [(row["source_id"], SleepSession.model_validate_json(row["payload"])) for row in _sleep_rows(conn)]
+        records = [(row["source_id"], SleepSession.model_validate_json(
+            row["payload"])) for row in _sleep_rows(conn)]
     records.sort(key=lambda row: instant(row[1].start), reverse=True)
     return [{"source_id": source_id, **session.model_dump(mode="json"),
              "hours_asleep": round(session.hours_asleep, 3)} for source_id, session in records]
@@ -296,16 +319,19 @@ def list_sleep_records() -> list[dict]:
 
 def upsert_sleep_session(source_id: str, session: SleepSession, *, now: datetime | None = None) -> dict:
     if source_id in (".", "..") or SOURCE_ID_PATTERN.fullmatch(source_id) is None:
-        raise ValueError("source_id must contain 1-200 ASCII letters, digits, underscores, hyphens, dots or colons, and cannot be '.' or '..'")
+        raise ValueError(
+            "source_id must contain 1-200 ASCII letters, digits, underscores, hyphens, dots or colons, and cannot be '.' or '..'")
     session = SleepSession.model_validate(session.model_dump())
     if session.latency_min is not None and (
         session.latency_min > session.minutes + 1e-6
         or session.latency_min + session.hours_asleep * 60 > session.minutes + 1e-6
     ):
-        raise ValueError("minutes to fall asleep plus time asleep cannot exceed time in bed; reconcile efficiency, latency and recorded times")
+        raise ValueError(
+            "minutes to fall asleep plus time asleep cannot exceed time in bed; reconcile efficiency, latency and recorded times")
     now = now or datetime.now(timezone.utc)
     if instant(session.end) > instant(now):
-        raise ValueError("only completed sleep can be saved; wake-up time must not be in the future")
+        raise ValueError(
+            "only completed sleep can be saved; wake-up time must not be in the future")
     user_id = current_account_id()
     with get_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -313,7 +339,8 @@ def upsert_sleep_session(source_id: str, session: SleepSession, *, now: datetime
                     if row["source_id"] != source_id]
         combined = normalise_sessions([*previous, session])
         if len(combined) != len(previous) + 1:
-            raise ValueError("this sleep interval already exists; update its original source_id")
+            raise ValueError(
+                "this sleep interval already exists; update its original source_id")
         primary_nights(combined)
         if user_id is None:
             conn.execute("INSERT INTO sleep_sessions (source_id, payload) VALUES (?, ?) "
@@ -342,23 +369,29 @@ def fetch_sleep_history() -> list[dict]:
 
 def _save_setting(conn, key: str, payload: str, user_id: str | None):
     if user_id is None:
-        conn.execute("INSERT INTO settings (key, payload) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET payload = excluded.payload", (key, payload))
+        conn.execute(
+            "INSERT INTO settings (key, payload) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET payload = excluded.payload", (key, payload))
     else:
         conn.execute("INSERT INTO scoped_settings (user_id, key, payload) VALUES (?, ?, ?) "
                      "ON CONFLICT(user_id, key) DO UPDATE SET payload = excluded.payload", (user_id, key, payload))
 
 
 def replace_calendar_events(events: list[CalendarEvent], metadata: dict | None = None):
-    validated = [CalendarEvent.model_validate(event.model_dump()) for event in events]
-    metadata_json = json.dumps(metadata, allow_nan=False) if metadata is not None else None
+    validated = [CalendarEvent.model_validate(
+        event.model_dump()) for event in events]
+    metadata_json = json.dumps(
+        metadata, allow_nan=False) if metadata is not None else None
     user_id = current_account_id()
     with get_connection() as conn:
         if user_id is None:
             conn.execute("DELETE FROM calendar_events")
-            conn.executemany("INSERT INTO calendar_events (position, payload) VALUES (?, ?)", [(i, event.model_dump_json()) for i, event in enumerate(validated)])
+            conn.executemany("INSERT INTO calendar_events (position, payload) VALUES (?, ?)", [
+                             (i, event.model_dump_json()) for i, event in enumerate(validated)])
         else:
-            conn.execute("DELETE FROM scoped_calendar_events WHERE user_id = ?", (user_id,))
-            conn.executemany("INSERT INTO scoped_calendar_events (user_id, position, payload) VALUES (?, ?, ?)", [(user_id, i, event.model_dump_json()) for i, event in enumerate(validated)])
+            conn.execute(
+                "DELETE FROM scoped_calendar_events WHERE user_id = ?", (user_id,))
+            conn.executemany("INSERT INTO scoped_calendar_events (user_id, position, payload) VALUES (?, ?, ?)", [
+                             (user_id, i, event.model_dump_json()) for i, event in enumerate(validated)])
         if metadata_json is not None:
             _save_setting(conn, "calendar_metadata", metadata_json, user_id)
 
@@ -378,9 +411,11 @@ def load_calendar_metadata() -> dict:
     user_id = current_account_id()
     with get_connection() as conn:
         if user_id is None:
-            row = conn.execute("SELECT payload FROM settings WHERE key = 'calendar_metadata'").fetchone()
+            row = conn.execute(
+                "SELECT payload FROM settings WHERE key = 'calendar_metadata'").fetchone()
         else:
-            row = conn.execute("SELECT payload FROM scoped_settings WHERE user_id = ? AND key = 'calendar_metadata'", (user_id,)).fetchone()
+            row = conn.execute(
+                "SELECT payload FROM scoped_settings WHERE user_id = ? AND key = 'calendar_metadata'", (user_id,)).fetchone()
     return json.loads(row["payload"]) if row else {}
 
 
@@ -399,9 +434,11 @@ def load_google_connection(reference: str) -> str | None:
     user_id = current_account_id()
     with get_connection() as conn:
         if user_id is None:
-            row = conn.execute("SELECT credentials_json FROM google_connections WHERE reference = ?", (reference,)).fetchone()
+            row = conn.execute(
+                "SELECT credentials_json FROM google_connections WHERE reference = ?", (reference,)).fetchone()
         else:
-            row = conn.execute("SELECT credentials_json FROM scoped_google_connections WHERE user_id = ? AND reference = ?", (user_id, reference)).fetchone()
+            row = conn.execute(
+                "SELECT credentials_json FROM scoped_google_connections WHERE user_id = ? AND reference = ?", (user_id, reference)).fetchone()
     return row["credentials_json"] if row else None
 
 
@@ -420,9 +457,11 @@ def delete_google_connection(reference: str):
     user_id = current_account_id()
     with get_connection() as conn:
         if user_id is None:
-            conn.execute("DELETE FROM google_connections WHERE reference = ?", (reference,))
+            conn.execute(
+                "DELETE FROM google_connections WHERE reference = ?", (reference,))
         else:
-            conn.execute("DELETE FROM scoped_google_connections WHERE user_id = ? AND reference = ?", (user_id, reference))
+            conn.execute(
+                "DELETE FROM scoped_google_connections WHERE user_id = ? AND reference = ?", (user_id, reference))
 
 
 def save_oauth_pending(reference: str, payload: dict):
@@ -430,7 +469,8 @@ def save_oauth_pending(reference: str, payload: dict):
     encoded = json.dumps(payload, allow_nan=False)
     with get_connection() as conn:
         if user_id is None:
-            conn.execute("INSERT INTO oauth_pending (reference, payload) VALUES (?, ?) ON CONFLICT(reference) DO UPDATE SET payload = excluded.payload", (reference, encoded))
+            conn.execute(
+                "INSERT INTO oauth_pending (reference, payload) VALUES (?, ?) ON CONFLICT(reference) DO UPDATE SET payload = excluded.payload", (reference, encoded))
         else:
             conn.execute("INSERT INTO scoped_oauth_pending (user_id, reference, payload) VALUES (?, ?, ?) "
                          "ON CONFLICT(user_id, reference) DO UPDATE SET payload = excluded.payload", (user_id, reference, encoded))
@@ -441,33 +481,41 @@ def pop_oauth_pending(reference: str) -> dict | None:
     with get_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
         if user_id is None:
-            row = conn.execute("SELECT payload FROM oauth_pending WHERE reference = ?", (reference,)).fetchone()
-            conn.execute("DELETE FROM oauth_pending WHERE reference = ?", (reference,))
+            row = conn.execute(
+                "SELECT payload FROM oauth_pending WHERE reference = ?", (reference,)).fetchone()
+            conn.execute(
+                "DELETE FROM oauth_pending WHERE reference = ?", (reference,))
         else:
-            row = conn.execute("SELECT payload FROM scoped_oauth_pending WHERE user_id = ? AND reference = ?", (user_id, reference)).fetchone()
-            conn.execute("DELETE FROM scoped_oauth_pending WHERE user_id = ? AND reference = ?", (user_id, reference))
+            row = conn.execute(
+                "SELECT payload FROM scoped_oauth_pending WHERE user_id = ? AND reference = ?", (user_id, reference)).fetchone()
+            conn.execute(
+                "DELETE FROM scoped_oauth_pending WHERE user_id = ? AND reference = ?", (user_id, reference))
     return json.loads(row["payload"]) if row else None
 
 
 def load_onboarding(user_id: str) -> dict:
     with get_connection() as conn:
         _require_account(conn, user_id, matching_scope=True)
-        row = conn.execute("SELECT payload, revision FROM account_onboarding WHERE user_id = ?", (user_id,)).fetchone()
+        row = conn.execute(
+            "SELECT payload, revision FROM account_onboarding WHERE user_id = ?", (user_id,)).fetchone()
     return {**json.loads(row["payload"]), "_revision": row["revision"]} if row else {"messages": [], "draft": {}, "_revision": 0}
 
 
 def save_onboarding(user_id: str, state: dict, *, expected_revision: int | None = None) -> dict:
-    payload = {key: value for key, value in state.items() if key != "_revision"}
+    payload = {key: value for key, value in state.items() if key !=
+               "_revision"}
     encoded = json.dumps(payload, allow_nan=False)
     with get_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
         account = _require_account(conn, user_id, matching_scope=True)
         if account["onboarding_complete"]:
             raise ValueError("Your profile is already set up.")
-        row = conn.execute("SELECT revision FROM account_onboarding WHERE user_id = ?", (user_id,)).fetchone()
+        row = conn.execute(
+            "SELECT revision FROM account_onboarding WHERE user_id = ?", (user_id,)).fetchone()
         revision = row["revision"] if row else 0
         if expected_revision is not None and expected_revision != revision:
-            raise ValueError("Your setup conversation changed. Reload it and try again.")
+            raise ValueError(
+                "Your setup conversation changed. Reload it and try again.")
         revision += 1
         conn.execute("INSERT INTO account_onboarding (user_id, payload, revision, updated_at) VALUES (?, ?, ?, ?) "
                      "ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, revision = excluded.revision, updated_at = excluded.updated_at",
@@ -486,10 +534,76 @@ def complete_onboarding(user_id: str, profile: UserProfile, goal: str | None = N
         account = _require_account(conn, user_id, matching_scope=True)
         if account["onboarding_complete"]:
             raise ValueError("Your profile is already set up.")
-        row = conn.execute("SELECT revision FROM account_onboarding WHERE user_id = ?", (user_id,)).fetchone()
+        row = conn.execute(
+            "SELECT revision FROM account_onboarding WHERE user_id = ?", (user_id,)).fetchone()
         if expected_revision is not None and expected_revision != (row["revision"] if row else 0):
-            raise ValueError("Your setup conversation changed. Reload it and try again.")
+            raise ValueError(
+                "Your setup conversation changed. Reload it and try again.")
         _write_profile(conn, profile, user_id)
         if goal is not None:
-            _save_setting(conn, "sleep_goal", json.dumps(goal.strip()), user_id)
-        conn.execute("UPDATE accounts SET onboarding_complete = 1 WHERE id = ?", (user_id,))
+            _save_setting(conn, "sleep_goal",
+                          json.dumps(goal.strip()), user_id)
+        conn.execute(
+            "UPDATE accounts SET onboarding_complete = 1 WHERE id = ?", (user_id,))
+
+
+def create_dream_table():
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS dreams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                image_path TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+
+def save_dream(user_id, title, content):
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO dreams (user_id, title, content)
+            VALUES (?, ?, ?)
+            """,
+            (user_id, title, content)
+        )
+        return cursor.lastrowid
+
+
+def get_dreams(user_id):
+    with get_connection() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT * FROM dreams
+            WHERE user_id = ?
+            ORDER BY created_at DESC, id DESC
+            """,
+            (user_id,)
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def get_dream(user_id, dream_id):
+    with get_connection() as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM dreams WHERE id = ? AND user_id = ?",
+            (dream_id, user_id)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def save_dream_image(user_id, dream_id, image_path):
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE dreams SET image_path = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (image_path, dream_id, user_id)
+        )

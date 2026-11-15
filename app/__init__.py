@@ -15,7 +15,8 @@ def _origin(value: str):
         parsed = urlsplit(value)
         if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
             return None
-        port = parsed.port if parsed.port is not None else (443 if parsed.scheme == "https" else 80)
+        port = parsed.port if parsed.port is not None else (
+            443 if parsed.scheme == "https" else 80)
         return parsed.scheme, parsed.hostname, port
     except ValueError:
         return None
@@ -30,11 +31,13 @@ def _session_secret() -> str:
     secret_path = PROJECT_ROOT / "instance" / "session_secret"
     secret_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
-        descriptor = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        descriptor = os.open(secret_path, os.O_WRONLY |
+                             os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         secret = secret_path.read_text().strip()
         if not secret:
-            raise RuntimeError("The local session secret file is empty; set SESSION_SECRET.")
+            raise RuntimeError(
+                "The local session secret file is empty; set SESSION_SECRET.")
         return secret
     with os.fdopen(descriptor, "w") as secret_file:
         secret = secrets.token_urlsafe(48)
@@ -52,7 +55,7 @@ def create_app(*, load_environment: bool = True):
     if load_environment:
         load_dotenv(PROJECT_ROOT / ".env")
 
-    from app.pages import auth, onboarding, calendar, dashboard, nap_planner, sleep_history, sleep_planner
+    from app.pages import auth, onboarding, calendar, dashboard, nap_planner, sleep_history, sleep_planner, dream_journal
     from app.services import accounts, db
 
     db.init_db()
@@ -64,12 +67,14 @@ def create_app(*, load_environment: bool = True):
         request.state.account = None
         if path.startswith("/static/"):
             return await call_next(request)
-        account = accounts.resolve_session(request.session.get(accounts.SESSION_KEY))
+        account = accounts.resolve_session(
+            request.session.get(accounts.SESSION_KEY))
         request.state.account = account
         if account is None and request.method == "GET" and path in ("/", "/signup", "/login"):
             if canonical := accounts.canonical_entry_url(request):
                 return RedirectResponse(canonical, status_code=303)
-        public = path in ("/", "/signup", "/login", "/logout", "/health", "/favicon.ico")
+        public = path in ("/", "/signup", "/login",
+                          "/logout", "/health", "/favicon.ico")
         setup = path == "/onboarding" or path.startswith("/onboarding/")
         wants_json = path.startswith("/api/") or path == "/onboarding/message"
         if account is None:
@@ -78,7 +83,8 @@ def create_app(*, load_environment: bool = True):
             if not public:
                 if wants_json:
                     return JSONResponse(status_code=401, content={"detail": "Sign in to continue.", "next": "/login"})
-                next_path = path + ("?" + request.url.query if request.url.query else "")
+                next_path = path + \
+                    ("?" + request.url.query if request.url.query else "")
                 return RedirectResponse("/login?next=" + quote(next_path, safe=""), status_code=303)
         elif not account["onboarding_complete"] and not public and not setup:
             if wants_json:
@@ -116,8 +122,9 @@ def create_app(*, load_environment: bool = True):
         https_only=os.getenv("SESSION_HTTPS_ONLY", "false").lower() == "true",
     )
 
-    app.mount("/static", StaticFiles(directory=PROJECT_ROOT / "app" / "static"), name="static")
-    for router in (auth.router, onboarding.router, dashboard.router, nap_planner.router, sleep_planner.router, calendar.router, sleep_history.router):
+    app.mount("/static", StaticFiles(directory=PROJECT_ROOT /
+              "app" / "static"), name="static")
+    for router in (auth.router, onboarding.router, dashboard.router, nap_planner.router, sleep_planner.router, calendar.router, sleep_history.router, dream_journal.router):
         app.include_router(router)
 
     @app.get("/health", include_in_schema=False)

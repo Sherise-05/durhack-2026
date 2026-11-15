@@ -125,6 +125,27 @@
         {% endif %}
     </article>
 </section>
+
+<section class="sleep-demo">
+    <h2>Sleep Now</h2>
+
+    <p>
+        Wake up and help the world!
+    </p>
+
+    <button id="sleep-now-btn" type="button">
+        I'm sleeping now
+    </button>
+
+    <p id="sleep-demo-status" aria-live="polite"></p>
+
+    <button id="stop-demo-btn" type="button" hidden>
+        Stop demo alarm
+    </button>
+</section>
+
+<script src="/static/js/sleep-demo.js" defer></script>
+
 </div>
 
 {% if snapshot.gp_card %}

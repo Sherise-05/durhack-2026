@@ -27,7 +27,8 @@ def _recent_sleep(nights, now, need_h):
     """Calendar-day totals from completed primary nights; missing is not zero."""
     recorded = {}
     for night in nights:
-        recorded[night.morning] = recorded.get(night.morning, 0) + night.hours_asleep
+        recorded[night.morning] = recorded.get(
+            night.morning, 0) + night.hours_asleep
     return {
         "points": [
             {"label": day.strftime("%d %b"), "value": recorded.get(day)}

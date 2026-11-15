@@ -23,6 +23,8 @@
                 <a href="/sleep-planner" {% if current_path.startswith('/sleep-planner') %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">☾</span>Tonight</a>
                 <a href="/calendar" {% if current_path == '/calendar' %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">▦</span>Calendar</a>
                 <a href="/sleep-history" {% if current_path == '/sleep-history' %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">↗</span>My sleep</a>
+                <a href="/sleep-history" {% if current_path == '/sleep-history' %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">↗</span>History</a>
+                <a href="/dream-journal" {% if current_path == '/dream-journal' %}aria-current="page"{% endif %}><span class="nav-symbol" aria-hidden="true">↗</span>Dream Journal</a>
             </nav>
             {% endif %}
             <div class="account-controls">
