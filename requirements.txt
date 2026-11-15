@@ -1,0 +1,6 @@
+# Sleep maths (app/services: sleep_model, learning, modes, planner, nap_recc)
+pydantic>=2.7
+tzdata  # time-zone data for zoneinfo on Windows (jet-lag plans)
+
+# Tests
+pytest>=8
