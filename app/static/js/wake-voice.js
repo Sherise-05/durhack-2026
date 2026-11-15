@@ -58,5 +58,8 @@ window.DozeWakeVoice = (() => {
         await speakWithBrowser(message || "Time to wake up!");
     }
 
-    return {prepare, play, get message() { return message; }};
+    // Resolves once the message (and audio) has loaded, or after a few seconds at most.
+    const ready = () => Promise.race([pending || Promise.resolve(), new Promise(r => setTimeout(r, 4000))]);
+
+    return {prepare, play, ready, get message() { return message; }};
 })();

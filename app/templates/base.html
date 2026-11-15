@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap">
     <link rel="stylesheet"
-          href="{{ url_for('static', path='/css/scripts.css') }}?v=18">
+          href="{{ url_for('static', path='/css/scripts.css') }}?v=19">
     {% block extra_head %}{% endblock %}
 </head>
 <body{% if not profile_complete %} class="public-view"{% endif %}{% if demo_timer_seconds %} data-demo-timer="{{ demo_timer_seconds }}"{% endif %}>
@@ -63,8 +63,8 @@
 
     <footer class="site-footer">Sleep smarter. <span>{% if profile_complete %}Times shown in Europe/London · Model estimates, not clinical measurements.{% else %}Your sleep. Your rhythm.{% endif %}</span></footer>
     <script src="{{ url_for('static', path='/js/scripts.js') }}?v=5" defer></script>
-    <script src="{{ url_for('static', path='/js/wake-voice.js') }}?v=1" defer></script>
-    <script src="{{ url_for('static', path='/js/nap.js') }}?v=4" defer></script>
+    <script src="{{ url_for('static', path='/js/wake-voice.js') }}?v=2" defer></script>
+    <script src="{{ url_for('static', path='/js/nap.js') }}?v=5" defer></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

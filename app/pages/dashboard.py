@@ -163,8 +163,15 @@ def wake_voice_api(kind: str = "sleep"):
     If ElevenLabs is unavailable, returns 503 with the message text so the
     browser can read it with its own voice instead.
     """
-    profile = db.load_user_data().profile
-    message = wake_voice.pick_message(profile.name if profile.name.lower() != "you" else "", "nap" if kind == "nap" else "sleep")
+    data = db.load_user_data()
+    profile = data.profile
+    kind = "nap" if kind == "nap" else "sleep"
+    greeting = wake_voice.pick_message(profile.name if profile.name.lower() != "you" else "", kind)
+    try:
+        summary = wake_voice.day_summary(data, web.local_now(), kind)
+    except Exception:  # never let the summary stop the alarm from speaking
+        summary = ""
+    message = f"{greeting} {summary}".strip()
     try:
         audio, voice = wake_voice.speak(message)
     except wake_voice.WakeVoiceUnavailable as exc:

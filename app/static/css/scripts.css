@@ -463,3 +463,10 @@ th { color: var(--muted); font-weight: 600; }
 .flow-draft-ready { margin: 12px 0; padding: 14px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--purple-300); }
 .flow-draft-ready[hidden] { display: none; }
 .flow-draft-ready p { margin: 0 0 10px; font-weight: 600; color: var(--purple-800); }
+
+/* Red "I'm awake" button: only shown while the alarm is ringing */
+.awake-button { display: block; width: 100%; margin-top: 12px; padding: 14px 18px; border: 0; border-radius: 14px; background: #d93f4f; color: #fff; font: inherit; font-size: 1.05rem; font-weight: 700; cursor: pointer; box-shadow: 0 8px 20px rgba(217, 63, 79, .35); }
+.awake-button:hover { background: #bf3343; }
+.awake-button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.awake-button[hidden] { display: none; }
+@media (prefers-reduced-motion: no-preference) { .awake-button { animation: nap-pulse 1s ease-in-out infinite; } }

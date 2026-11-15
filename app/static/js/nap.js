@@ -82,8 +82,12 @@
             ringing = setInterval(ring, 1400);
             setTimeout(stopRinging, 120000); // give up after 2 minutes
         };
-        if (window.DozeWakeVoice) window.DozeWakeVoice.play(audio).then(startBeeps);
-        else startBeeps();
+        if (window.DozeWakeVoice) {
+            window.DozeWakeVoice.ready().then(() => {
+                if (window.DozeWakeVoice.message) showReason(window.DozeWakeVoice.message, null, "The rest of your day");
+            });
+            window.DozeWakeVoice.play(audio).then(startBeeps);
+        } else startBeeps();
     }
     function stopRinging() {
         if (ringing && ringing !== "speaking") clearInterval(ringing);

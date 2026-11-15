@@ -36,7 +36,7 @@
             </button>
             <p id="sleep-demo-status" class="sleep-status" aria-live="polite"></p>
             <div class="sleep-actions">
-                <button type="button" class="link-light" id="stop-demo-btn" hidden>I'm awake: stop</button>
+                <button type="button" class="awake-button" id="stop-demo-btn" hidden>☀️ I'm awake: stop the alarm</button>
                 <button type="button" class="link-light" id="demo-wake-btn" hidden>Demo: wake in 10 s</button>
             </div>
         </div>
@@ -151,7 +151,7 @@
 {% endif %}
 {% endblock %}
 {% block extra_scripts %}
-<script src="{{ url_for('static', path='/js/sleep-demo.js') }}?v=5" defer></script>
+<script src="{{ url_for('static', path='/js/sleep-demo.js') }}?v=7" defer></script>
 <script src="{{ url_for('static', path='/js/what-if.js') }}?v=2" defer></script>
 <script>
 (() => {  // Load personal tips after the page is shown, so Today stays fast.

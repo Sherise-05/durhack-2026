@@ -74,6 +74,7 @@ async function stopAlarm(message = "Alarm stopped. Good morning!") {
 
 async function startAlarm() {
   box.dataset.state = "ringing";
+  stopButton.hidden = false;
   titleText.textContent = "Wake up!";
   subText.textContent = "Help researchers identify squirrels to switch the alarm off";
   demoButton.hidden = true;
@@ -91,6 +92,8 @@ async function startAlarm() {
   }
   // Speak a wake-up message (ElevenLabs) first, then start the beeps.
   if (window.DozeWakeVoice) {
+    await window.DozeWakeVoice.ready();
+    if (window.DozeWakeVoice.message) setStatus(window.DozeWakeVoice.message);  // show what's being read
     await window.DozeWakeVoice.play(alarmContext);
     if (box.dataset.state !== "ringing") return;  // stopped while it was speaking
   }
@@ -147,7 +150,7 @@ if (box && sleepButton) {
     if (demoSeconds > 0) wakeAt = Date.now() + demoSeconds * 1000;  // demo: ring soon
     box.dataset.state = "sleeping";
     sleepButton.disabled = false;
-    stopButton.hidden = false;
+    // The red "I'm awake" button only appears once the alarm starts.
     demoButton.hidden = demoSeconds > 0;  // the demo timer already rings soon
     setStatus(demoSeconds > 0
       ? `Demo timer: the alarm rings in ${demoSeconds} seconds. Zooniverse is open in a new tab.`

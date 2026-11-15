@@ -77,3 +77,26 @@ def test_demo_timer_is_on_by_default_and_can_be_switched_off(client, monkeypatch
     assert 'data-demo-timer="10"' in client.get("/dashboard").text
     monkeypatch.setenv("DEMO_TIMER_SECONDS", "0")
     assert "data-demo-timer" not in client.get("/dashboard").text
+
+
+def test_day_summary_reads_the_days_plan():
+    from app.services import personas
+    now = datetime(2026, 11, 15, 11, 50)
+    maya = personas.load_persona("maya", now.date())
+    morning = wake_voice.day_summary(maya, now, "sleep")
+    assert morning.startswith("Here's your day.") and "Good luck in your Algorithms exam!" in morning
+    assert "sharpest around" in morning and "winding down at" in morning
+    assert ".." not in morning
+    nap = wake_voice.day_summary(maya, now, "nap")
+    assert nap.startswith("Here's the rest of your day.") and nap.endswith("tonight.") and ".." not in nap
+    assert wake_voice.spoken_time(datetime(2026, 1, 1, 9, 0)) == "9 a.m."
+    assert wake_voice.spoken_time(datetime(2026, 1, 1, 15, 30)) == "3:30 p.m."
+
+
+def test_route_speaks_greeting_then_summary(client, monkeypatch):
+    spoken = {}
+    monkeypatch.setattr(wake_voice, "speak", lambda text: (spoken.setdefault("text", text) and b"ID3", "Alice"))
+    assert client.get("/api/me/wake-voice?kind=sleep").status_code == 200
+    text = spoken["text"]
+    # Greeting first, then the plan (this test user has an empty calendar).
+    assert text.index("Your calendar is clear today.") > 10 and "winding down at" in text

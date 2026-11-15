@@ -90,3 +90,89 @@ def speak(text: str) -> tuple[bytes, str]:
             last_error = exc
             log.warning("ElevenLabs %s failed (%s); trying the next model.", model, type(exc).__name__)
     raise WakeVoiceUnavailable(f"ElevenLabs couldn't generate speech ({type(last_error).__name__ if last_error else 'empty audio'}).")
+
+
+# --------------------------------------------------------------------------- day summary
+
+from datetime import time as _time
+
+# Our choice: "save your hardest work for then" should point at the working day,
+# even though the model often predicts a second, early-evening peak.
+WORKDAY = (_time(8, 0), _time(18, 0))
+
+def spoken_time(t) -> str:
+    """'9 a.m.', '3:30 p.m.': easy for a voice to read and for a person to hear."""
+    hour = t.hour % 12 or 12
+    suffix = "a.m." if t.hour < 12 else "p.m."
+    return f"{hour} {suffix}" if t.minute == 0 else f"{hour}:{t.minute:02d} {suffix}"
+
+
+def _list(items: list[str]) -> str:
+    if len(items) <= 2:
+        return " and ".join(items)
+    return ", ".join(items[:-1]) + ", and " + items[-1]
+
+
+def _sentence(text: str) -> str:
+    """End with exactly one full stop, even after 'a.m.' or 'p.m.'."""
+    text = text.rstrip()
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
+def day_summary(data, now, kind: str = "sleep", model=None) -> str:
+    """A short spoken plan for the day you're waking into.
+
+    After a night's sleep: the whole day (the day of the planned alarm). After a
+    nap: what's left of today. Built from the calendar and the sleep model only.
+    """
+    from datetime import datetime, time as clock_time, timedelta
+
+    from app.schemas import EventCategory, Mode
+    from app.services import planner
+    from app.services.modes import effective_mode
+    from app.services.sleep_model import PersonModel
+    from app.time_utils import instant
+
+    model = model or PersonModel(data, now)
+    night = planner.recommend_bedtime(data, now, model=model)
+    if kind == "nap":
+        day, after = now.date(), now
+    else:
+        day, after = night.alarm.date(), night.alarm
+    events = sorted((e for e in data.events if e.start.date() == day and e.category != EventCategory.REST
+                     and instant(e.end) > instant(after)), key=lambda e: instant(e.start))
+    parts = []
+    if events:
+        named = [f"{e.title} at {spoken_time(e.start)}" for e in events[:3]]
+        extra = f", plus {len(events) - 3} more" if len(events) > 3 else ""
+        count = "1 thing" if len(events) == 1 else f"{len(events)} things"
+        lead = "Here's the rest of your day." if kind == "nap" else "Here's your day."
+        parts.append(_sentence(f"{lead} You have {count} on: {_list(named)}{extra}"))
+    else:
+        parts.append("Nothing else in your calendar today." if kind == "nap" else "Your calendar is clear today.")
+    exam = next((e for e in events if e.category == EventCategory.EXAM), None)
+    mode, _ = effective_mode(data, now)
+    if exam is not None:
+        parts.append(f"Good luck in your {exam.title}!")
+    if kind != "nap":
+        try:
+            curve = planner.what_if_bedtime(data, now, night.bedtime, night.alarm, model=model).curve
+        except ValueError:
+            curve = []
+        awake = [p for p in curve if p.alertness is not None and p.at.date() == day
+                 and instant(p.at) >= instant(night.alarm + timedelta(hours=1))
+                 and WORKDAY[0] <= p.at.time() <= WORKDAY[1]]
+        if awake:
+            peak = max(awake, key=lambda p: p.alertness)
+            afternoon = [p for p in awake if clock_time(12, 0) <= p.at.time() <= clock_time(17, 0)]
+            dip = min(afternoon, key=lambda p: p.alertness) if afternoon else None
+            line = f"You'll be sharpest around {spoken_time(peak.at)}, so save your hardest work for then"
+            if dip is not None and dip.alertness < peak.alertness - 5:
+                line += f", and expect a dip around {spoken_time(dip.at)}"
+            parts.append(_sentence(line))
+    if night.feasible and not night.in_progress:
+        parts.append(_sentence(f"Aim to start winding down at {spoken_time(night.wind_down)}"
+                               + (" tonight" if kind == "nap" else "")))
+    if mode == Mode.TRAVEL:
+        parts.append("Remember your jet-lag plan.")
+    return " ".join(parts)
