@@ -15,13 +15,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const COPY = {
         dream: {label: "Your dream", mic: "Tap and tell Doze your dream", placeholder: "I was walking through a city in the clouds, and…", empty: "Tell Doze a little about your dream first."},
         day: {label: "Your day", mic: "Tap and tell Doze about your day", placeholder: "Today I had my maths lecture, then…", empty: "Tell Doze a little about your day first."},
+        dump: {label: "What's on your mind?", mic: "Tap and empty your head", placeholder: "I need to finish my essay, email my tutor about the deadline, and I'm worried about the exam…", empty: "Say or type what's on your mind first.", save: "🧠 Make tomorrow's plan", busy: "Sorting your thoughts and planning tomorrow…"},
     };
-    form.querySelectorAll("input[name=kind]").forEach(radio => radio.addEventListener("change", () => {
+    const saveLabel = save.textContent;
+    const applyKind = () => {
         const copy = COPY[kind()];
         contentLabel.textContent = copy.label;
         content.placeholder = copy.placeholder;
+        save.textContent = copy.save || saveLabel;
         if (mic.dataset.state !== "listening" && !mic.disabled) micLabel.textContent = copy.mic;
-    }));
+    };
+    form.querySelectorAll("input[name=kind]").forEach(radio => radio.addEventListener("change", applyKind));
+    applyKind();  // e.g. opened from Today's "Mind racing?" link with Brain dump selected
 
     // ---- read aloud (browser voice) ----
     function speak(text) {
@@ -84,7 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
         event.preventDefault();
         if (!content.value.trim()) { status.textContent = COPY[kind()].empty; return; }
         save.disabled = true;
-        status.textContent = kind() === "day" ? "Illustrating your day…" : "Illustrating your dream…";
+        status.textContent = COPY[kind()].busy || (kind() === "day" ? "Illustrating your day…" : "Illustrating your dream…");
         try {
             const response = await fetch("/api/dreams", {
                 method: "POST",

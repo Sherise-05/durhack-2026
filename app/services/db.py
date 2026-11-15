@@ -571,9 +571,9 @@ def _ensure_dream_columns(conn):
 
 
 def save_dream(user_id, title, content, details: dict | None = None, kind: str = "dream"):
-    """Save a journal entry; ``kind`` is "dream" (a night's dream) or "day" (a day entry)."""
-    if kind not in ("dream", "day"):
-        raise ValueError("kind must be 'dream' or 'day'")
+    """Save a journal entry: "dream" (a night's dream), "day" (a day entry) or "dump" (bedtime brain dump)."""
+    if kind not in ("dream", "day", "dump"):
+        raise ValueError("kind must be 'dream', 'day' or 'dump'")
     with get_connection() as conn:
         cursor = conn.execute(
             """

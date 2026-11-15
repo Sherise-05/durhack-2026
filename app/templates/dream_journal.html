@@ -25,18 +25,50 @@
     </div>
 </article>
 {% endmacro %}
+{% macro dump_plan(dump, open=True) %}
+{% set d = dump.details %}
+{% if d.crisis %}
+<p class="notice warning dump-support" role="alert">{{ d.support }}</p>
+{% else %}
+{% if d.summary %}<p class="dump-summary">{{ d.summary }}</p>{% endif %}
+<div class="dump-grid">
+    <div>
+        <h3>Tomorrow</h3>
+        {% if d.plan and (d.plan.scheduled or d.plan.events) %}
+        <ol class="dump-timeline">
+            {% set items = (d.plan.scheduled|map('dict_with_kind', 'task')|list) + (d.plan.events|map('dict_with_kind', 'event')|list) %}
+            {% for item in items|sort(attribute='start') %}
+            <li class="dump-{{ item.kind }}{% if item.focus %} dump-focus{% endif %}">
+                <time>{{ item.start[11:16] }}</time>
+                <span><strong>{{ item.title }}</strong>{% if item.kind == 'task' %}<small>{{ item.minutes }} min · {{ item.why }}</small>{% else %}<small>In your calendar</small>{% endif %}</span>
+            </li>
+            {% endfor %}
+        </ol>
+        {% else %}<p class="muted">Nothing that needs a slot tomorrow.</p>{% endif %}
+        {% if d.plan and d.plan.later %}<p class="muted dump-later"><strong>Later this week:</strong> {{ d.plan.later|join(' · ') }}</p>{% endif %}
+    </div>
+    <div>
+        <h3>Parked for tonight</h3>
+        {% if d.worries %}
+        <ul class="dump-worries">{% for w in d.worries %}<li><strong>{{ w.text }}</strong><span>{{ w.note }}</span></li>{% endfor %}</ul>
+        {% else %}<p class="muted">No worries to park. Nice.</p>{% endif %}
+    </div>
+</div>
+{% endif %}
+{% endmacro %}
 {% block content %}
 <section class="today-heading">
     <h1>Dreams &amp; days</h1>
-    <p class="muted">Write down last night's dream or how your day went. Doze titles it and draws a little postcard.</p>
+    <p class="muted">Write down last night's dream or how your day went, or empty your head before bed and Doze turns it into tomorrow's plan.</p>
 </section>
 
 <section class="card dream-capture" aria-labelledby="capture-title">
     <h2 id="capture-title" class="sr-only">New entry</h2>
     <form id="dream-form" data-dream-form>
         <div class="tab-switch kind-switch" role="radiogroup" aria-label="What are you writing about?">
-            <label><input type="radio" name="kind" value="dream" checked> 🌙 Dream</label>
-            <label><input type="radio" name="kind" value="day"> ☀️ Day</label>
+            <label><input type="radio" name="kind" value="dream" {% if start_kind == 'dream' %}checked{% endif %}> 🌙 Dream</label>
+            <label><input type="radio" name="kind" value="day" {% if start_kind == 'day' %}checked{% endif %}> ☀️ Day</label>
+            <label><input type="radio" name="kind" value="dump" {% if start_kind == 'dump' %}checked{% endif %}> 🧠 Brain dump</label>
         </div>
         <button type="button" class="dream-mic" id="record-dream" data-state="idle">
             <span class="dream-mic-icon" aria-hidden="true">🎙</span>
@@ -62,6 +94,21 @@
     </form>
 </section>
 
+{% if dumps %}
+{% set latest = dumps[0] %}
+<section class="card dump-card section-gap" aria-labelledby="dump-title">
+    <p class="eyebrow">🧠 FROM YOUR BRAIN DUMP · {{ latest.when|datetime_label if latest.when else '' }}</p>
+    <h2 id="dump-title">{{ latest.title }}</h2>
+    {{ dump_plan(latest) }}
+    <div class="action-row"><button type="button" class="text-link-button delete-entry" data-dream-id="{{ latest.id }}">Delete</button></div>
+    {% if dumps|length > 1 %}
+    <details class="section-gap"><summary>Earlier brain dumps ({{ dumps|length - 1 }})</summary>
+        {% for dump in dumps[1:] %}<div class="dump-older"><h3>{{ dump.title }}</h3>{{ dump_plan(dump) }}</div>{% endfor %}
+    </details>
+    {% endif %}
+</section>
+{% endif %}
+
 <div class="journal-columns section-gap">
     <section aria-labelledby="dreams-title">
         <div class="section-heading"><h2 id="dreams-title">🌙 Dreams</h2><p class="muted">{{ dreams|length }}</p></div>
@@ -82,5 +129,5 @@
 </div>
 {% endblock %}
 {% block extra_scripts %}
-<script src="{{ url_for('static', path='/js/dream-journal.js') }}?v=3" defer></script>
+<script src="{{ url_for('static', path='/js/dream-journal.js') }}?v=4" defer></script>
 {% endblock %}

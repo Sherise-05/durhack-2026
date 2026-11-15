@@ -96,7 +96,8 @@ templates = Jinja2Templates(
 )
 templates.env.filters.update(clock=clock, clock_ceil=clock_ceil, datetime_label=datetime_label,
                              date_label=date_label, duration_h=duration_h, nap_reason=nap_reason,
-                             local_iso=local_isoformat)
+                             local_iso=local_isoformat,
+                             dict_with_kind=lambda value, kind: {**value, "kind": kind})
 
 
 def local_now() -> datetime:

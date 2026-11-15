@@ -94,3 +94,33 @@ def test_days_and_dreams_are_saved_and_shown_in_separate_columns(client):
 def test_profile_offers_early_bird_and_night_owl(client):
     page = client.get("/profile").text
     assert "Early bird" in page and "Night owl" in page and 'value="neutral"' in page
+
+
+def test_brain_dump_sorts_tasks_and_worries_and_plans_tomorrow_around_events(client):
+    from app.schemas import CalendarEvent, EventCategory
+    db.upsert_sleep_session("night", SleepSession(start=datetime(2026, 11, 15, 23), end=datetime(2026, 11, 16, 7),
+                                                  efficiency=0.9), now=NOW)
+    lecture = CalendarEvent(title="Maths lecture", start=datetime(2026, 11, 17, 11), end=datetime(2026, 11, 17, 12),
+                            category=EventCategory.LECTURE)
+    db.replace_calendar_events([lecture])
+    text = ("I need to revise linear algebra for the exam. I have to email my tutor about the deadline. "
+            "I'm worried everyone else is ahead of me.")
+    body = client.post("/api/dreams", json={"content": text, "kind": "dump"}).json()
+    details = body["details"]
+    assert body["kind"] == "dump" and details["crisis"] is False and details["source"] == "doze"
+    titles = [t["title"].lower() for t in details["tasks"]]
+    assert any("revise" in t for t in titles) and any("email" in t for t in titles)
+    assert details["worries"] and "worried" in details["worries"][0]["text"]
+    plan = details["plan"]
+    assert plan["day"] == "2026-11-17" and plan["scheduled"]
+    for item in plan["scheduled"]:  # never on top of the lecture (with its 15-min buffer)
+        assert item["end"] <= "2026-11-17T10:45" or item["start"] >= "2026-11-17T12:15"
+    focus = next(i for i in plan["scheduled"] if i["focus"])
+    assert "sharpest" in focus["why"]
+    page = client.get("/dream-journal")
+    assert page.context["dumps"] and "Parked for tonight" in page.text and "Maths lecture" in page.text
+
+
+def test_brain_dump_offers_support_instead_of_a_plan_for_crisis_language(client):
+    details = client.post("/api/dreams", json={"content": "I can't cope and I want to die.", "kind": "dump"}).json()["details"]
+    assert details["crisis"] is True and "116 123" in details["support"] and details["plan"] is None
