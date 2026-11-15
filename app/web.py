@@ -64,6 +64,19 @@ def nap_reason(reason: str, plan) -> str:
     return reason
 
 
+def demo_timer_seconds() -> int:
+    """Demo shortcut: when above 0, Sleep now and Nap now ring after this many seconds.
+
+    Temporary for presenting; set DEMO_TIMER_SECONDS=0 in .env for real timers.
+    """
+    import os
+
+    try:
+        return max(0, int(os.getenv("DEMO_TIMER_SECONDS", "10")))
+    except ValueError:
+        return 0
+
+
 def _page_context(request) -> dict:
     from app.services import db
     from app.services.modes import MODES, effective_mode
@@ -74,6 +87,7 @@ def _page_context(request) -> dict:
         "authenticated": account is not None,
         "profile_complete": bool(account and account["onboarding_complete"]),
         "calendar_status": {},
+        "demo_timer_seconds": demo_timer_seconds(),
     }
     if not public_context["profile_complete"]:
         return public_context

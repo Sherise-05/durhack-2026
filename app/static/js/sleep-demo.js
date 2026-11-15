@@ -89,6 +89,11 @@ async function startAlarm() {
   if (alarmContext && alarmContext.state === "suspended") {
     await alarmContext.resume().catch(() => {});
   }
+  // Speak a wake-up message (ElevenLabs) first, then start the beeps.
+  if (window.DozeWakeVoice) {
+    await window.DozeWakeVoice.play(alarmContext);
+    if (box.dataset.state !== "ringing") return;  // stopped while it was speaking
+  }
   beep();
   alarmInterval = setInterval(beep, 650);
   // The alarm stops when the task tab is closed.
@@ -133,14 +138,20 @@ if (box && sleepButton) {
       alarmContext = new AudioContextClass();
       await alarmContext.resume().catch(() => {});
     }
+    // Fetch the spoken wake-up message now, while the tap has unlocked audio.
+    if (window.DozeWakeVoice) window.DozeWakeVoice.prepare(alarmContext, "sleep");
 
     wakeAt = Date.parse(box.dataset.alarm);
     while (wakeAt <= Date.now()) wakeAt += 24 * 3600 * 1000; // pressed after today's wake time
+    const demoSeconds = Number(document.body.dataset.demoTimer || 0);
+    if (demoSeconds > 0) wakeAt = Date.now() + demoSeconds * 1000;  // demo: ring soon
     box.dataset.state = "sleeping";
     sleepButton.disabled = false;
     stopButton.hidden = false;
-    demoButton.hidden = false;
-    setStatus("Zooniverse is open in a new tab. Keep this Doze tab open too, so the alarm can ring.");
+    demoButton.hidden = demoSeconds > 0;  // the demo timer already rings soon
+    setStatus(demoSeconds > 0
+      ? `Demo timer: the alarm rings in ${demoSeconds} seconds. Zooniverse is open in a new tab.`
+      : "Zooniverse is open in a new tab. Keep this Doze tab open too, so the alarm can ring.");
     tick();
     countdownTimer = setInterval(tick, 1000);
   });

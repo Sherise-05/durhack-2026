@@ -4,12 +4,12 @@
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app import web
 from app.schemas import EventCategory
 from app.schemas import Mode
-from app.services import db, demo_modes, nap_now, planner, sleep_tips
+from app.services import db, demo_modes, nap_now, planner, sleep_tips, wake_voice
 from app.services.modes import MODES, back_to_term_plan, effective_mode, exam_wake_time, jet_lag_plan, upcoming_exams
 from app.services.nap_recc import recommend_nap
 from app.services.sleep_model import PersonModel, nightly_stats
@@ -154,3 +154,20 @@ def dashboard_api():
         "curve": [point.model_dump(mode="json") for point in planner.day_curve(data, now, model=model)],
         "has_sleep_history": bool(data.sessions),
     }
+
+
+@router.get("/api/me/wake-voice")
+def wake_voice_api(kind: str = "sleep"):
+    """A random wake-up message in a random ElevenLabs voice, as MP3.
+
+    If ElevenLabs is unavailable, returns 503 with the message text so the
+    browser can read it with its own voice instead.
+    """
+    profile = db.load_user_data().profile
+    message = wake_voice.pick_message(profile.name if profile.name.lower() != "you" else "", "nap" if kind == "nap" else "sleep")
+    try:
+        audio, voice = wake_voice.speak(message)
+    except wake_voice.WakeVoiceUnavailable as exc:
+        return JSONResponse(status_code=503, content={"message": message, "detail": str(exc)})
+    return Response(content=audio, media_type="audio/mpeg",
+                    headers={"X-Wake-Message": message.encode("ascii", "ignore").decode(), "X-Wake-Voice": voice.encode("ascii", "ignore").decode()})

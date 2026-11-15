@@ -73,15 +73,22 @@
     }
     function startRinging() {
         if (ringing) return;
+        ringing = "speaking";  // the wake-up message plays first, then the beeps
         notify("Time to wake up from your nap.");
         const ring = () => { if (audio) { const t = audio.currentTime; [880, 1175, 880, 1175].forEach((f, i) => beep(t + i * 0.2, f)); } };
-        ring();
-        ringing = setInterval(ring, 1400);
-        setTimeout(stopRinging, 120000); // give up after 2 minutes
+        const startBeeps = () => {
+            if (ringing !== "speaking") return;  // stopped while it was speaking
+            ring();
+            ringing = setInterval(ring, 1400);
+            setTimeout(stopRinging, 120000); // give up after 2 minutes
+        };
+        if (window.DozeWakeVoice) window.DozeWakeVoice.play(audio).then(startBeeps);
+        else startBeeps();
     }
     function stopRinging() {
-        if (ringing) clearInterval(ringing);
+        if (ringing && ringing !== "speaking") clearInterval(ringing);
         ringing = null;
+        try { if ("speechSynthesis" in window) speechSynthesis.cancel(); } catch (e) { /* ignore */ }
     }
 
     // ---- states ------------------------------------------------------------------
@@ -103,7 +110,7 @@
         } else if (now < alarm) {
             if (!chimed && now - lie < 60000 && lie > plan.pressed_at + 60000) { chime(); notify(`Time to lie down. Alarm set for ${hhmm(plan.alarm)}.`); }
             chimed = true;
-            show("napping", {eyebrow: "Sleep well · alarm in", title: countdown(alarm - now), sub: `Alarm ${hhmm(plan.alarm)} · includes time to fall asleep`, icon: "☾"});
+            show("napping", {eyebrow: "Sleep well · alarm in", title: countdown(alarm - now), sub: plan.demo ? `Demo timer · the real nap would be ${plan.sleep_min} min` : `Alarm ${hhmm(plan.alarm)} · includes time to fall asleep`, icon: "☾"});
         } else if (now - alarm < 10 * 60000) {
             show("ringing", {eyebrow: "Wake up", title: "Time to get up", sub: "Tap to stop the alarm", icon: "☀"});
             startRinging();
@@ -168,6 +175,15 @@
             return;
         }
         els.cancel.hidden = false;
+        // Fetch the spoken wake-up message now; the tap above unlocked audio for later.
+        if (window.DozeWakeVoice) window.DozeWakeVoice.prepare(audio, "nap");
+        const demoSeconds = Number(document.body.dataset.demoTimer || 0);
+        if (demoSeconds > 0) {  // demo: ring after a few seconds instead of the real nap length
+            const now = Date.now();
+            result.lie_down = new Date(now).toISOString();
+            result.alarm = new Date(now + demoSeconds * 1000).toISOString();
+            result.demo = true;
+        }
         begin({...result, pressed_at: Date.now()});
         loadReason("Why this timing");
     }
@@ -182,7 +198,11 @@
         begin(stored);
         showWarnings(stored.warnings);
         showReason(stored.reason || "", stored.source, "Why this timing");
-        document.addEventListener("click", unlockAudio, {once: true});
+        // After a refresh, sound needs one tap again; fetch the wake-up message then too.
+        document.addEventListener("click", () => {
+            unlockAudio();
+            if (window.DozeWakeVoice) window.DozeWakeVoice.prepare(audio, "nap");
+        }, {once: true});
     } else {
         reset();
     }
