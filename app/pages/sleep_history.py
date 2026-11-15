@@ -1,8 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
-from app.services.db import execute_query
-
+from app.services.db import get_connection
 router = APIRouter()
 
 # Pydantic model for sleep history
@@ -28,7 +27,7 @@ async def get_sleep_history():
     """
     query = "SELECT id, date, duration, quality FROM sleep_history ORDER BY date DESC;"
     try:
-        records = await execute_query(query)
+        records = await get_connection(query)
         return [dict(record) for record in records]
     except Exception as e:
         raise HTTPException(
@@ -46,7 +45,7 @@ async def add_sleep_history(new_record: NewSleepHistory):
     RETURNING id, date, duration, quality;
     """
     try:
-        record = await execute_query(query, new_record.date, new_record.duration, new_record.quality)
+        record = await get_connection(query, new_record.date, new_record.duration, new_record.quality)
         return dict(record[0])  # Return the first (and only) record
     except Exception as e:
         raise HTTPException(
@@ -60,7 +59,7 @@ async def delete_sleep_history(id: int):
     """
     query = "DELETE FROM sleep_history WHERE id = $1;"
     try:
-        await execute_query(query, id)
+        await get_connection(query, id)
         return {"message": f"Sleep history record with ID {id} deleted successfully."}
     except Exception as e:
         raise HTTPException(

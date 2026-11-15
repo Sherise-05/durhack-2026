@@ -1,20 +1,24 @@
 
-from app.services.db import execute_query
+from app.services.db import get_connection
 
 
 async def fetch_calendar_events():
-    rows = await execute_query("""
-        SELECT *
-        FROM calendar_events
-        ORDER BY start_time ASC
-    """)
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT *
+            FROM calendar_events
+            ORDER BY start_time ASC
+        """).fetchall()
+
     return [dict(row) for row in rows]
 
 
 async def fetch_sleep_history():
-    rows = await execute_query("""
-        SELECT *
-        FROM sleep_records
-        ORDER BY sleep_start DESC
-    """)
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT *
+            FROM sleep_records
+            ORDER BY sleep_start DESC
+        """).fetchall()
+
     return [dict(row) for row in rows]
