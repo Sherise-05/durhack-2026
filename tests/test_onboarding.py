@@ -278,3 +278,13 @@ def test_retired_provider_model_has_specific_sanitized_configuration_error(monke
         service.request_gemini([{"role": "user", "content": "Hello"}], {})
     assert "update GEMINI_MODEL" in str(error.value)
     assert "private-provider" not in str(error.value)
+
+
+@pytest.mark.parametrize("text", ["Take a look at your summary whenever you are ready!", "Got it, that is totally fine."])
+def test_reply_always_asks_for_the_next_missing_detail(account, monkeypatch, text):
+    # Gemini sometimes "finishes" early; with details missing the user must still get a question.
+    monkeypatch.setattr(service, "request_gemini", lambda messages, draft: reply(text=text))
+    result = service.converse(account, "ok")
+    assert result["ready"] is False
+    assert result["reply"].rstrip().endswith("?")
+    assert "summary" not in result["reply"].lower()

@@ -93,3 +93,7 @@ body.public-view { padding-bottom: 0; }
     .flow-review-form > .action-row > .button { width: 100%; }
     .flow-how { padding-top: 25px; }
 }
+
+/* Chat only: the profile details appear on the review page, not alongside the chat. */
+.flow-chat-grid.flow-chat-solo { grid-template-columns: minmax(0, 1fr); max-width: 820px; }
+.flow-manual-link { margin: 14px 0 0; font-size: .9rem; }

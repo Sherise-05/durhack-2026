@@ -284,7 +284,8 @@ def converse(account: dict, message: str) -> dict:
                 reply = "Thanks — your starting profile is ready to review. Check and edit the details before saving it."
 
             elif re.search(
-                r"\b(all set|profile is (?:complete|ready|saved)|setup is complete|everything (?:is|looks) ready|saved (?:your |the )?(?:profile|routine)|profile has been saved)\b",
+                r"\b(all set|profile is (?:complete|ready|saved)|setup is complete|everything (?:is|looks) ready|saved (?:your |the )?(?:profile|routine)|profile has been saved"
+                r"|(?:your|the) summary|ready to review|review (?:it|your|the)|you(?:'re| are) (?:done|finished))\b",
                 reply,
                 re.I
             ):
@@ -293,6 +294,10 @@ def converse(account: dict, message: str) -> dict:
                     + FIELD_LABELS[missing[0]]
                     + "?"
                 )
+            elif "?" not in reply:
+                # Details are still missing, so always end with the next question;
+                # otherwise the user is left with nothing to answer and no way forward.
+                reply = reply.rstrip() + " Before we review it, could you tell me " + FIELD_LABELS[missing[0]] + "?"
             state = {**state, "draft": draft, "messages": [*messages, {
                 "role": "assistant", "content": reply}], "pending": False, "error": None}
             state = db.save_onboarding(

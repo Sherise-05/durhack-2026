@@ -457,3 +457,9 @@ th { color: var(--muted); font-weight: 600; }
 @media (prefers-reduced-motion: no-preference) {
     .button, .nav-links a { transition: background-color .15s ease, border-color .15s ease; }
 }
+
+/* Onboarding: make the next step obvious once all details are in */
+.flow-review-button[hidden] { display: none; }
+.flow-draft-ready { margin: 12px 0; padding: 14px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--purple-300); }
+.flow-draft-ready[hidden] { display: none; }
+.flow-draft-ready p { margin: 0 0 10px; font-weight: 600; color: var(--purple-800); }

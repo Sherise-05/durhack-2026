@@ -36,6 +36,7 @@
         const start = prefixMatches ? previousMessages.length : 0;
         nextMessages.slice(start).forEach(message => transcript.append(messageElement(message)));
         const draft = next.draft && typeof next.draft === "object" ? next.draft : state.draft || {};
+        // The draft panel was removed from the chat page; details are shown on Review.
         root.querySelectorAll("[data-draft-field]").forEach(field => {
             const key = field.dataset.draftField;
             let value = draft[key];
@@ -46,11 +47,14 @@
         });
         const missing = Array.isArray(next.missing_fields) ? next.missing_fields : state.missing_fields || [];
         const count = Math.max(0, Math.min(5, 5 - missing.length));
-        root.querySelector("[data-progress-text]").textContent = `${count} of 5 routine details collected`;
-        root.querySelector("[data-profile-progress]").value = count;
+        const progressText = root.querySelector("[data-progress-text]");
+        if (progressText) progressText.textContent = `${count} of 5 routine details collected`;
+        const progress = root.querySelector("[data-profile-progress]");
+        if (progress) progress.value = count;
         const ready = next.ready === true;
         review.hidden = !ready;
-        root.querySelector("[data-profile-ready]").hidden = !ready;
+        const readyNote = root.querySelector("[data-profile-ready]");
+        if (readyNote) readyNote.hidden = !ready;
         state = {...state, ...next, messages: nextMessages, draft, missing_fields: missing};
         transcript.scrollTop = transcript.scrollHeight;
     }
@@ -103,5 +107,12 @@
         }
     });
     answer.addEventListener("input", () => answer.setCustomValidity(""));
+    // Like other chat apps: Enter sends, Shift+Enter adds a new line.
+    // Skip while an input method is composing text (e.g. Chinese or Japanese typing).
+    answer.addEventListener("keydown", event => {
+        if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+        event.preventDefault();
+        if (!pending) form.requestSubmit();
+    });
     render(state);
 })();
